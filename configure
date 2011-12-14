@@ -636,6 +636,7 @@ if test $withsharedlibs = "yes"; then
     i[345]86-*-netbsd*)           natdynlink=true;;
     x86_64-*-netbsd*)             natdynlink=true;;
     i386-*-gnu0.3)                natdynlink=true;;
+    arm*-*-linux*)                natdynlink=true;;
   esac
 fi
 
@@ -690,6 +691,7 @@ case "$host" in
   powerpc-*-rhapsody*)          arch=power; model=ppc; system=rhapsody;;
   powerpc-*-darwin*)            arch=power; system=rhapsody
                                 if $arch64; then model=ppc64; else model=ppc; fi;;
+  arm*-*-linux-gnueabihf)       arch=arm; model=armv7; system=linux;;
   arm*-*-linux*)                arch=arm; system=linux;;
   arm*-*-gnu*)                  arch=arm; system=gnu;;
   ia64-*-linux*)                arch=ia64; system=linux;;

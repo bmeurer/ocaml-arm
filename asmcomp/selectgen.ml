@@ -366,7 +366,7 @@ method insert_move src dst =
     self#insert (Iop Imove) [|src|] [|dst|]
 
 method insert_moves src dst =
-  for i = 0 to Array.length src - 1 do
+  for i = 0 to min (Array.length src) (Array.length dst) - 1 do
     self#insert_move src.(i) dst.(i)
   done
 

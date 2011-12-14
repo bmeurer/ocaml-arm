@@ -2,11 +2,11 @@
 (*                                                                     *)
 (*                           Objective Caml                            *)
 (*                                                                     *)
-(*            Xavier Leroy, projet Cristal, INRIA Rocquencourt         *)
+(*                  Benedikt Meurer, University of Siegen              *)
 (*                                                                     *)
-(*  Copyright 1998 Institut National de Recherche en Informatique et   *)
-(*  en Automatique.  All rights reserved.  This file is distributed    *)
-(*  under the terms of the Q Public License version 1.0.               *)
+(*    Copyright 2011 Lehrstuhl für Compilerbau und Softwareanalyse,    *)
+(*    Universität Siegen. All rights reserved. This file is distri-    *)
+(*    buted under the terms of the Q Public License version 1.0.       *)
 (*                                                                     *)
 (***********************************************************************)
 
@@ -17,9 +17,20 @@
 open Misc
 open Format
 
+let (armv, thumb2, vfp3) =
+  match Config.model with
+  | "armv7" -> (7, true, true)    (* ARMv7 w/ VFPv3 & Thumb-2 *)
+  | _       -> (4, false, false)  (* ARMv4 w/ soft-float *)
+
 (* Machine-specific command-line options *)
 
-let command_line_options = []
+let pic_code = ref false
+
+let command_line_options =
+  [ "-fPIC", Arg.Set pic_code,
+      " Generate position-independent machine code";
+    "-fno-PIC", Arg.Clear pic_code,
+      " Generate position-dependent machine code" ]
 
 (* Addressing modes *)
 
@@ -37,6 +48,14 @@ type specific_operation =
     Ishiftarith of arith_operation * int
   | Ishiftcheckbound of int
   | Irevsubimm of int
+  | Imla    (* multiply-accumulate *)
+  | Imls    (* multiply-subtract *)
+  | Inmulf  (* floating-point negate-multiply *)
+  | Imacf   (* floating-point multiply-accumulate *)
+  | Inmacf  (* floating-point negate-multiply-accumulate *)
+  | Imscf   (* floating-point multiply-subtract *)
+  | Inmscf  (* floating-point negate-multiply-subtract *)
+  | Isqrtf  (* floating-point square root *)
 
 and arith_operation =
     Ishiftadd
@@ -84,3 +103,56 @@ let print_specific_operation printreg op ppf arg =
       fprintf ppf "check %a >> %i > %a" printreg arg.(0) n printreg arg.(1)
   | Irevsubimm n ->
       fprintf ppf "%i %s %a" n "-" printreg arg.(0)
+  | Imla ->
+      fprintf ppf "(%a * %a) + %a"
+        printreg arg.(0)
+        printreg arg.(1)
+        printreg arg.(2)
+  | Imls ->
+      fprintf ppf "-(%a * %a) + %a"
+        printreg arg.(0)
+        printreg arg.(1)
+        printreg arg.(2)
+  | Inmulf ->
+      fprintf ppf "-f (%a *f %a)"
+        printreg arg.(0)
+        printreg arg.(1)
+  | Imacf ->
+      fprintf ppf "%a +f (%a *f %a)"
+        printreg arg.(0)
+        printreg arg.(1)
+        printreg arg.(2)
+  | Inmacf ->
+      fprintf ppf "%a -f (%a *f %a)"
+        printreg arg.(0)
+        printreg arg.(1)
+        printreg arg.(2)
+  | Imscf ->
+      fprintf ppf "(-f %a) +f (%a *f %a)"
+        printreg arg.(0)
+        printreg arg.(1)
+        printreg arg.(2)
+  | Inmscf ->
+      fprintf ppf "(-f %a) -f (%a *f %a)"
+        printreg arg.(0)
+        printreg arg.(1)
+        printreg arg.(2)
+  | Isqrtf ->
+      fprintf ppf "sqrtf %a"
+        printreg arg.(0)
+
+(* Recognize immediate operands *)
+
+(* Immediate operands are 8-bit immediate values, zero-extended,
+   and rotated right by 0 ... 30 bits.
+   In Thumb/Thumb-2 mode we utilize 26 ... 30. *)
+
+let is_immediate n =
+  let n = ref n in
+  let s = ref 0 in
+  let m = if thumb2 then 24 else 30 in
+  while (!s <= m && Int32.logand !n 0xffl <> !n) do
+    n := Int32.logor (Int32.shift_right_logical !n 2) (Int32.shift_left !n 30);
+    s := !s + 2
+  done;
+  !s <= m
