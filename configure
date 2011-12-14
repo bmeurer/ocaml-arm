@@ -691,9 +691,8 @@ case "$host" in
   powerpc-*-rhapsody*)          arch=power; model=ppc; system=rhapsody;;
   powerpc-*-darwin*)            arch=power; system=rhapsody
                                 if $arch64; then model=ppc64; else model=ppc; fi;;
-  arm*-*-linux-gnueabihf)       arch=arm; model=armv7; system=linux;;
-  arm*-*-linux*)                arch=arm; system=linux;;
-  arm*-*-gnu*)                  arch=arm; system=gnu;;
+  arm*-*-linux-gnueabihf)       arch=arm; system=linux_eabihf;;
+  arm*-*-linux-gnueabi)         arch=arm; system=linux_eabi;;
   ia64-*-linux*)                arch=ia64; system=linux;;
   ia64-*-gnu*)                  arch=ia64; system=gnu;;
   ia64-*-freebsd*)              arch=ia64; system=freebsd;;

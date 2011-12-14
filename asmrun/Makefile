@@ -68,12 +68,6 @@ install-prof:
 	cp libasmrunp.a $(LIBDIR)/libasmrunp.a
 	cd $(LIBDIR); $(RANLIB) libasmrunp.a
 
-arm.o: arm-$(MODEL).o
-	cp arm-$(MODEL).o arm.o
-
-arm.p.o: arm-$(MODEL).o
-	cp arm-$(MODEL).o arm.p.o
-
 power.o: power-$(SYSTEM).o
 	cp power-$(SYSTEM).o power.o
 

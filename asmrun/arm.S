@@ -14,23 +14,41 @@
 
 /* $Id$ */
 
-/* Asm part of the runtime system, ARMv7-A processor with VFPv3-D16 */
+/* Asm part of the runtime system, ARM processor */
+/* Must be preprocessed by cpp */
 
         .syntax unified
+        .text
+#if defined(SYS_linux_eabihf)
         .arch   armv7-a
         .fpu    vfpv3-d16
+        .thumb
+#elif defined(SYS_linux_eabi)
+        .arch   armv4t
+        .arm
+
+    /* Compatibility macros */
+        .macro  blx reg
+        mov     lr, pc
+        bx      \reg
+        .endm
+        .macro  cbz reg, lbl
+        cmp     \reg, #0
+        beq     \lbl
+        .endm
+        .macro  vpop
+        .endm
+        .macro  vpush
+        .endm
+#endif
 
 trap_ptr        .req    r8
 alloc_ptr       .req    r10
 alloc_limit     .req    r11
 
-        .text
-        .thumb
-
 /* Allocation functions and GC interface */
 
         .align  2
-        .thumb_func
         .globl  caml_call_gc
 caml_call_gc:
     /* Record return address */
@@ -70,7 +88,6 @@ caml_call_gc:
         .size   caml_call_gc, .-caml_call_gc
 
         .align  2
-        .thumb_func
         .globl  caml_alloc1
 caml_alloc1:
         subs    alloc_ptr, alloc_ptr, 8
@@ -91,7 +108,6 @@ caml_alloc1:
         .size   caml_alloc1, .-caml_alloc1
 
         .align  2
-        .thumb_func
         .globl  caml_alloc2
 caml_alloc2:
         sub     alloc_ptr, alloc_ptr, 12
@@ -112,7 +128,6 @@ caml_alloc2:
         .size   caml_alloc2, .-caml_alloc2
 
         .align  2
-        .thumb_func
         .globl  caml_alloc3
 caml_alloc3:
         sub     alloc_ptr, alloc_ptr, 16
@@ -133,7 +148,6 @@ caml_alloc3:
         .size   caml_alloc3, .-caml_alloc3
 
         .align  2
-        .thumb_func
         .globl  caml_allocN
 caml_allocN:
         sub     alloc_ptr, alloc_ptr, r7
@@ -157,7 +171,6 @@ caml_allocN:
 /* Function to call is in r7 */
 
         .align  2
-        .thumb_func
         .globl  caml_c_call
 caml_c_call:
     /* Record lowest stack address and return address */
@@ -186,7 +199,6 @@ caml_c_call:
 /* Start the Caml program */
 
         .align  2
-        .thumb_func
         .globl  caml_start_program
 caml_start_program:
         ldr     r12, =caml_program
@@ -258,7 +270,6 @@ caml_start_program:
 /* The trap handler */
 
         .align  2
-        .thumb_func
 .Ltrap_handler:
     /* Save exception pointer */
         ldr     r12, =caml_exception_pointer
@@ -273,7 +284,6 @@ caml_start_program:
 /* Raise an exception from Caml */
 
         .align  2
-        .thumb_func
         .globl  caml_raise_exn
 caml_raise_exn:
     /* Test if backtrace is active */
@@ -299,7 +309,6 @@ caml_raise_exn:
 /* Raise an exception from C */
 
         .align  2
-        .thumb_func
         .globl  caml_raise_exception
 caml_raise_exception:
     /* Reload trap ptr, alloc ptr and alloc limit */
@@ -333,7 +342,6 @@ caml_raise_exception:
 /* Callback from C to Caml */
 
         .align  2
-        .thumb_func
         .globl  caml_callback_exn
 caml_callback_exn:
     /* Initial shuffling of arguments (r0 = closure, r1 = first arg) */
@@ -346,7 +354,6 @@ caml_callback_exn:
         .size   caml_callback_exn, .-caml_callback_exn
 
         .align  2
-        .thumb_func
         .globl  caml_callback2_exn
 caml_callback2_exn:
     /* Initial shuffling of arguments (r0 = closure, r1 = arg1, r2 = arg2) */
@@ -360,7 +367,6 @@ caml_callback2_exn:
         .size   caml_callback2_exn, .-caml_callback2_exn
 
         .align  2
-        .thumb_func
         .globl  caml_callback3_exn
 caml_callback3_exn:
     /* Initial shuffling of arguments */
@@ -376,7 +382,6 @@ caml_callback3_exn:
         .size   caml_callback3_exn, .-caml_callback3_exn
 
         .align  2
-        .thumb_func
         .globl  caml_ml_array_bound_error
 caml_ml_array_bound_error:
     /* Load address of [caml_array_bound_error] in r7 */
