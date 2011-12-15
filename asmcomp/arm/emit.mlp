@@ -54,10 +54,6 @@ let emit_reg = function
     {loc = Reg r} -> emit_string (register_name r)
   | _ -> fatal_error "Emit_arm.emit_reg"
 
-let emit_subreg = function
-    {loc = Reg r; typ = Float} -> emit_string "s"; emit_int (r / 50)
-  | _ -> fatal_error "Emit_arm.emit_subreg"
-
 (* Layout of the stack frame *)
 
 let stack_offset = ref 0
@@ -127,28 +123,13 @@ let record_frame live dbg =
 type gc_call =
   { gc_lbl: label;                      (* Entry label *)
     gc_return_lbl: label;               (* Where to branch after GC *)
-    gc_frame_lbl: label;                (* Label of frame descriptor *)
-    gc_live: Reg.Set.t }                (* Live registers *)
+    gc_frame_lbl: label }               (* Label of frame descriptor *)
 
 let call_gc_sites = ref ([] : gc_call list)
 
 let emit_call_gc gc =
-  let rec emit_regs = function
-      [] -> ()
-    | [reg] -> emit_reg reg
-    | reg :: regs -> `{emit_reg reg},`; emit_regs regs in
-  let regs = ref [] in
-  Reg.Set.iter
-    (function
-        {typ = Float; loc = Reg _} as r -> regs := r :: !regs
-      | _ -> ())
-      gc.gc_live;
-  `{emit_label gc.gc_lbl}:`;
-  if !regs <> [] then `	vpush	\{{emit_regs !regs}}\n`;
-  `	{emit_call "caml_call_gc"}\n`;
-  `{emit_label gc.gc_frame_lbl}:`;
-  if !regs <> [] then `	vpop	\{{emit_regs !regs}}\n`;
-  `	b	{emit_label gc.gc_return_lbl}\n`
+  `{emit_label gc.gc_lbl}:	{emit_call "caml_call_gc"}\n`;
+  `{emit_label gc.gc_frame_lbl}:	b	{emit_label gc.gc_return_lbl}\n`
 
 (* Record calls to caml_ml_array_bound_error.
    In debug mode, we maintain one call to caml_ml_array_bound_error
@@ -474,8 +455,8 @@ let emit_instr i =
         stack_offset := !stack_offset + n;
         ninstr
     | Lop(Iload(Single, addr)) when !fpu >= VFPv3_D16 ->
-        `	flds	{emit_subreg i.res.(0)}, {emit_addressing addr i.arg 0}\n`;
-        `	fcvtds	{emit_reg i.res.(0)}, {emit_subreg i.res.(0)}\n`; 2
+        `	flds	s14, {emit_addressing addr i.arg 0}\n`;
+        `	fcvtds	{emit_reg i.res.(0)}, s14\n`; 2
     | Lop(Iload((Double | Double_u), addr)) when !fpu = Soft ->
         let addr' = offset_addressing addr 4 in
         if i.res.(0).loc <> i.arg.(0).loc then begin
@@ -517,17 +498,18 @@ let emit_instr i =
           | _ (* 32-bit quantities *) -> "str" in
         `	{emit_string instr}	{emit_reg r}, {emit_addressing addr i.arg 1}\n`; 1
     | Lop(Ialloc n) ->
+        let lbl_frame = record_frame_label i.live i.dbg in
         if not !fastcode_flag && (n = 8 || n = 12 || n = 16) then begin
           let s = "caml_alloc" ^ (string_of_int ((n - 4) / 4)) in
           `	{emit_call s}\n`;
-          record_frame i.live i.dbg;
-          `	add	{emit_reg i.res.(0)}, alloc_ptr, #4\n`; 2
-        end else if not !fastcode_flag && i.res.(0) = phys_reg 7 then begin
-          (* r7 is the result so we can use it *)
+          `{emit_label lbl_frame}:	add	{emit_reg i.res.(0)}, alloc_ptr, #4\n`;
+          2
+        end else if not !fastcode_flag
+                  && Reg.Set.for_all (fun r -> r.loc <> Reg 7) i.live then begin
+          (* r7 is not live so we can use it *)
           let ninstr = emit_intconst (phys_reg 7) (Int32.of_int n) in
           `	{emit_call "caml_allocN"}\n`;
-          record_frame i.live i.dbg;
-          `	add	{emit_reg i.res.(0)}, alloc_ptr, #4\n`;
+          `{emit_label lbl_frame}:	add	{emit_reg i.res.(0)}, alloc_ptr, #4\n`;
           2 + ninstr
         end else begin
           let lbl_redo = new_label() in
@@ -539,13 +521,11 @@ let emit_instr i =
           `	cmp	alloc_ptr, alloc_limit\n`;
           `	add	{emit_reg i.res.(0)}, alloc_ptr, #4\n`;
           let lbl_call_gc = new_label() in
-          let lbl_frame = record_frame_label i.live i.dbg in
           `	bcc	{emit_label lbl_call_gc}\n`;
           call_gc_sites :=
             { gc_lbl = lbl_call_gc;
               gc_return_lbl = lbl_redo;
-              gc_frame_lbl = lbl_frame;
-              gc_live = i.live } :: !call_gc_sites;
+              gc_frame_lbl = lbl_frame } :: !call_gc_sites;
           3 + ninstr
         end
     | Lop(Iintop(Ilsl | Ilsr | Iasr as op)) ->
@@ -619,8 +599,8 @@ let emit_instr i =
     | Lop(Inegf) ->
         `	fnegd	{emit_reg i.res.(0)}, {emit_reg i.arg.(0)}\n`; 1
     | Lop(Ifloatofint) ->
-        `	fmsr	{emit_subreg i.res.(0)}, {emit_reg i.arg.(0)}\n`;
-        `	fsitod	{emit_reg i.res.(0)}, {emit_subreg i.res.(0)}\n`; 2
+        `	fmsr	s14, {emit_reg i.arg.(0)}\n`;
+        `	fsitod	{emit_reg i.res.(0)}, s14\n`; 2
     | Lop(Iintoffloat) ->
         `	ftosizd	s14, {emit_reg i.arg.(0)}\n`;
         `	fmrs	{emit_reg i.res.(0)}, s14\n`; 2
@@ -815,10 +795,10 @@ let fundecl fundecl =
   `	.text\n`;
   `	.align	2\n`;
   `	.globl	{emit_symbol fundecl.fun_name}\n`;
-  if !arch >= ARMv7 && !thumb then begin
-    `	.thumb\n`;
-    `	.thumb_func\n`;
-  end;
+  if !arch >= ARMv7 && !thumb then
+    `	.thumb\n`
+  else
+    `	.arm\n`;
   `{emit_symbol fundecl.fun_name}:\n`;
   let n = frame_size() in
   ignore(emit_stack_adjustment "sub" n);
@@ -867,9 +847,9 @@ let begin_assembly() =
   | ARMv7, _     -> `	.arch	armv7-a\n`
   end;
   begin match !fpu with
-    VFPv3_D16 -> `	.fpu	vfpv3-d16\n`
-  | VFPv3_D32 -> `	.fpu	vfpv3-d32\n`
-  | Soft      -> ()
+    Soft      -> `	.fpu	softvfp\n`
+  | VFPv3_D16 -> `	.fpu	vfpv3-d16\n`
+  | VFPv3     -> `	.fpu	vfpv3\n`
   end;
   `trap_ptr	.req	r8\n`;
   `alloc_ptr	.req	r10\n`;

@@ -19,7 +19,7 @@ open Format
 
 type abi = EABI | EABI_VFP
 type arch = ARMv4 | ARMv5 | ARMv6 | ARMv7
-type fpu = Soft | VFPv3_D16 | VFPv3_D32
+type fpu = Soft | VFPv3_D16 | VFPv3
 
 let abi =
   match Config.system with
@@ -36,7 +36,7 @@ let string_of_arch = function
 let string_of_fpu = function
     Soft      -> "soft"
   | VFPv3_D16 -> "vfpv3-d16"
-  | VFPv3_D32 -> "vfpv3-d32"
+  | VFPv3     -> "vfpv3"
 
 (* Machine-specific command-line options *)
 
@@ -63,7 +63,7 @@ let ffpu spec =
   fpu := (match spec with
             "soft" when abi <> EABI_VFP -> Soft
           | "vfpv3-d16"                 -> VFPv3_D16
-          | "vfpv3-d32"                 -> VFPv3_D32
+          | "vfpv3"                     -> VFPv3
           | spec -> raise (Arg.Bad spec))
 
 let command_line_options =

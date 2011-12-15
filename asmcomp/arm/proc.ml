@@ -40,7 +40,7 @@ let word_addressed = false
    Floatinng-point register map (VFPv3):
     d0 - d7               general purpose (not preserved)
     d8 - d15              general purpose (preserved)
-    d16 - d31             generat purpose (not preserved), VFPv3-D32 only
+    d16 - d31             generat purpose (not preserved), VFPv3 only
 *)
 
 let int_reg_name =
@@ -55,8 +55,8 @@ let float_reg_name =
 (* We have three register classes:
     0 for integer registers
     1 for VFPv3-D16
-    2 for VFPv3-D32
-   This way we can choose between VFPv3-D16 and VFPv3-D32
+    2 for VFPv3
+   This way we can choose between VFPv3-D16 and VFPv3
    at (ocamlopt) runtime using command line switches.
 *)
 
@@ -66,8 +66,7 @@ let register_class r =
   match (r.typ, !fpu) with
     (Int | Addr), _  -> 0
   | Float, VFPv3_D16 -> 1
-  | Float, VFPv3_D32 -> 2
-  | _ -> assert false
+  | Float, _         -> 2
 
 let num_available_registers =
   [| 9; 16; 32 |]
@@ -183,6 +182,13 @@ let loc_exn_bucket = phys_reg 0
 
 (* Registers destroyed by operations *)
 
+let destroyed_at_alloc =            (* r0-r7, d0-d15 preserved *)
+  Array.of_list (List.map
+                   phys_reg
+                   [8;
+                    116;116;118;119;120;121;122;123;
+                    124;125;126;127;128;129;130;131])
+
 let destroyed_at_extcall_noalloc =
   Array.of_list (List.map
                    phys_reg
@@ -199,8 +205,8 @@ let destroyed_at_extcall_noalloc =
                          116;116;118;119;120;121;122;123;
                          124;125;126;127;128;129;130;131]))
 
-let destroyed_at_extcall =
-  Array.append                      (* also destroys r4-r7 *)
+let destroyed_at_extcall =          (* also destroys r4-r7 *)
+  Array.append
     destroyed_at_extcall_noalloc
     (Array.of_list(List.map phys_reg [4;5;6;7]))
 
@@ -212,10 +218,10 @@ let destroyed_at_oper = function
   | Iop(Iextcall(_, false)) ->
       destroyed_at_extcall_noalloc
   | Iop(Ialloc n) ->
-      [|phys_reg 8|]              (* r12 destroyed *)
+      destroyed_at_alloc
   | Iop(Iconst_symbol _) when !pic_code ->
       [|phys_reg 3; phys_reg 8|]  (* r3 and r12 destroyed *)
-  | Iop(Iintoffloat | Istore(Single, _)) when !fpu >= VFPv3_D16 ->
+  | Iop(Iintoffloat | Ifloatofint | Iload(Single, _) | Istore(Single, _)) ->
       [|phys_reg 107|]            (* d7 (s14-s15) destroyed *)
   | _ -> [||]
 
@@ -224,10 +230,11 @@ let destroyed_at_raise = all_phys_regs
 (* Maximal register pressure *)
 
 let safe_register_pressure = function
-    Iextcall(_, _) -> 4
+    Iextcall(_, _) -> 5
   | _ -> 9
+
 let max_register_pressure = function
-    Iextcall(_, _) -> [| 4; 10; 10 |]
+    Iextcall(_, _) -> [| 5; 9; 9 |]
   | _ -> [| 9; 16; 32 |]
 
 (* Layout of the stack *)

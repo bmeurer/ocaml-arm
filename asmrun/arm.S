@@ -58,6 +58,8 @@ caml_call_gc:
     /* Record lowest stack address */
         ldr     r12, =caml_bottom_of_stack
         str     sp, [r12]
+    /* Save caller floating-point registers on the stack */
+        vpush   {d0-d7}
     /* Save integer registers and return address on the stack */
         push    {r0-r7,r12,lr}
     /* Store pointer to saved integer registers in caml_gc_regs */
@@ -73,6 +75,8 @@ caml_call_gc:
         bl      caml_garbage_collection
     /* Restore integer registers and return address from the stack */
         pop     {r0-r7,r12,lr}
+    /* Restore floating-point registers from the stack */
+        vpop    {d0-d7}
     /* Reload new allocation pointer and limit */
     /* alloc_limit still points to caml_young_ptr */
         ldr     r12, =caml_young_limit
