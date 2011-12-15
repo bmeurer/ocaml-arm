@@ -67,6 +67,7 @@ let frame_size () =
     !stack_offset +
     4 * num_stack_slots.(0) +
     8 * num_stack_slots.(1) +
+    8 * num_stack_slots.(2) +
     (if !contains_calls then 4 else 0)
   in Misc.align sz 8
 
@@ -126,13 +127,28 @@ let record_frame live dbg =
 type gc_call =
   { gc_lbl: label;                      (* Entry label *)
     gc_return_lbl: label;               (* Where to branch after GC *)
-    gc_frame_lbl: label }               (* Label of frame descriptor *)
+    gc_frame_lbl: label;                (* Label of frame descriptor *)
+    gc_live: Reg.Set.t }                (* Live registers *)
 
 let call_gc_sites = ref ([] : gc_call list)
 
 let emit_call_gc gc =
-  `{emit_label gc.gc_lbl}:	{emit_call "caml_call_gc"}\n`;
-  `{emit_label gc.gc_frame_lbl}:	b	{emit_label gc.gc_return_lbl}\n`
+  let rec emit_regs = function
+      [] -> ()
+    | [reg] -> emit_reg reg
+    | reg :: regs -> `{emit_reg reg},`; emit_regs regs in
+  let regs = ref [] in
+  Reg.Set.iter
+    (function
+        {typ = Float; loc = Reg _} as r -> regs := r :: !regs
+      | _ -> ())
+      gc.gc_live;
+  `{emit_label gc.gc_lbl}:`;
+  if !regs <> [] then `	vpush	\{{emit_regs !regs}}\n`;
+  `	{emit_call "caml_call_gc"}\n`;
+  `{emit_label gc.gc_frame_lbl}:`;
+  if !regs <> [] then `	vpop	\{{emit_regs !regs}}\n`;
+  `	b	{emit_label gc.gc_return_lbl}\n`
 
 (* Record calls to caml_ml_array_bound_error.
    In debug mode, we maintain one call to caml_ml_array_bound_error
@@ -217,7 +233,7 @@ let emit_intconst dst n =
     `	movs	{emit_reg dst}, #{emit_int32 n}\n`; 1
   end else if is_immediate nr then begin
     `	mvn	{emit_reg dst}, #{emit_int32 nr}\n`; 1
-  end else if armv > 6 || thumb2 then begin
+  end else if !arch >= ARMv7 then begin
     let nl = Int32.logand 0xffffl n in
     let nh = Int32.logand 0xffffl (Int32.shift_right_logical n 16) in
     if nh = 0l then begin
@@ -298,7 +314,7 @@ let emit_literals() =
     float_literals := []
   end;
   if !symbol_literals <> [] then begin
-    let offset = if thumb2 then 4 else 8 in
+    let offset = if !thumb then 4 else 8 in
     let suffix = if !pic_code then "(GOT)" else "" in
     `	.align	2\n`;
     List.iter
@@ -332,9 +348,7 @@ let emit_load_symbol_addr dst s =
     `{emit_label lbl_pic}:	add	{emit_reg tmp}, pc, {emit_reg tmp}\n`;
     `	ldr	{emit_reg dst}, [{emit_reg tmp}, {emit_reg dst}] @ {emit_symbol s}\n`;
     4
-  end else if (armv > 6 || thumb2)
-           && not !Clflags.dlcode
-           && !fastcode_flag then begin
+  end else if !arch >= ARMv7 && not !Clflags.dlcode && !fastcode_flag then begin
     `	movw	{emit_reg dst}, #:lower16:{emit_symbol s}\n`;
     `	movt	{emit_reg dst}, #:upper16:{emit_symbol s}\n`;
     2
@@ -367,53 +381,55 @@ let emit_instr i =
               `	ldr	{emit_reg dst}, {emit_stack src}\n`
           end; 1
         end
+    | Lop(Ispecific Imrrdf) ->
+        `	fmrrd	{emit_reg i.res.(0)}, {emit_reg i.res.(1)}, {emit_reg i.arg.(0)}\n`; 1
+    | Lop(Ispecific Imdrrf) ->
+        `	fmdrr	{emit_reg i.res.(0)}, {emit_reg i.arg.(0)}, {emit_reg i.arg.(1)}\n`; 1
     | Lop(Iconst_int n) ->
         emit_intconst i.res.(0) (Nativeint.to_int32 n)
-    | Lop(Iconst_float f) ->
+    | Lop(Iconst_float f) when !fpu = Soft ->
         `	@ {emit_string f}\n`;
-        if vfp3 then begin
-          let encode imm =
-            let sg = Int64.to_int (Int64.shift_right_logical imm 63) in
-            let ex = Int64.to_int (Int64.shift_right_logical imm 52) in
-            let ex = (ex land 0x7ff) - 1023 in
-            let mn = Int64.logand imm 0xfffffffffffffL in
-            if Int64.logand mn 0xffffffffffffL <> 0L || ex < -3 || ex > 4
-            then
-              None
-            else begin
-              let mn = Int64.to_int (Int64.shift_right_logical mn 48) in
-              if mn land 0x0f <> mn then
-                None
-              else
-                let ex = ((ex + 3) land 0x07) lxor 0x04 in
-                Some((sg lsl 7) lor (ex lsl 4) lor mn)
-            end in
-          begin match encode (Int64.bits_of_float (float_of_string f)) with
-            None ->
-              let lbl = float_literal f in
-              `	fldd	{emit_reg i.res.(0)}, {emit_label lbl}\n`
-          | Some imm8 ->
-              `	fconstd	{emit_reg i.res.(0)}, #{emit_int imm8}\n`
-          end; 1
+        let bits = Int64.bits_of_float (float_of_string f) in
+        let high_bits = Int64.to_int32 (Int64.shift_right_logical bits 32)
+        and low_bits = Int64.to_int32 bits in
+        if is_immediate low_bits || is_immediate high_bits then begin
+          let ninstr_low = emit_intconst i.res.(0) low_bits
+          and ninstr_high = emit_intconst i.res.(1) high_bits in
+          ninstr_low + ninstr_high
         end else begin
-          let bits = Int64.bits_of_float (float_of_string f) in
-          let high_bits = Int64.to_int32 (Int64.shift_right_logical bits 32)
-          and low_bits = Int64.to_int32 bits in
-          if is_immediate low_bits || is_immediate high_bits then begin
-            let ninstr_low = emit_intconst i.res.(0) low_bits
-            and ninstr_high = emit_intconst i.res.(1) high_bits in
-            ninstr_low + ninstr_high
-          end else begin
-            let lbl = float_literal f in
-            `	ldr	{emit_reg i.res.(0)}, {emit_label lbl}\n`;
-            `	ldr	{emit_reg i.res.(1)}, {emit_label lbl} + 4\n`;
-            2
-          end
+          let lbl = float_literal f in
+          `	ldr	{emit_reg i.res.(0)}, {emit_label lbl}\n`;
+          `	ldr	{emit_reg i.res.(1)}, {emit_label lbl} + 4\n`;
+          2
         end
+    | Lop(Iconst_float f) ->
+        let encode imm =
+          let sg = Int64.to_int (Int64.shift_right_logical imm 63) in
+          let ex = Int64.to_int (Int64.shift_right_logical imm 52) in
+          let ex = (ex land 0x7ff) - 1023 in
+          let mn = Int64.logand imm 0xfffffffffffffL in
+          if Int64.logand mn 0xffffffffffffL <> 0L || ex < -3 || ex > 4
+          then
+            None
+          else begin
+            let mn = Int64.to_int (Int64.shift_right_logical mn 48) in
+            if mn land 0x0f <> mn then
+              None
+            else
+              let ex = ((ex + 3) land 0x07) lxor 0x04 in
+              Some((sg lsl 7) lor (ex lsl 4) lor mn)
+          end in
+        begin match encode (Int64.bits_of_float (float_of_string f)) with
+          None ->
+            let lbl = float_literal f in
+            `	fldd	{emit_reg i.res.(0)}, {emit_label lbl} @ {emit_string f}\n`
+        | Some imm8 ->
+            `	fconstd	{emit_reg i.res.(0)}, #{emit_int imm8} @ {emit_string f}\n`
+        end; 1
     | Lop(Iconst_symbol s) ->
         emit_load_symbol_addr i.res.(0) s
     | Lop(Icall_ind) ->
-        if thumb2 then begin
+        if !arch >= ARMv5 then begin
           `	blx	{emit_reg i.arg.(0)}\n`;
           `{record_frame i.live i.dbg}\n`; 1
         end else begin
@@ -457,10 +473,10 @@ let emit_instr i =
           else emit_stack_adjustment "add" (-n) in
         stack_offset := !stack_offset + n;
         ninstr
-    | Lop(Iload(Single, addr)) when vfp3 ->
+    | Lop(Iload(Single, addr)) when !fpu >= VFPv3_D16 ->
         `	flds	{emit_subreg i.res.(0)}, {emit_addressing addr i.arg 0}\n`;
         `	fcvtds	{emit_reg i.res.(0)}, {emit_subreg i.res.(0)}\n`; 2
-    | Lop(Iload((Double | Double_u), addr)) when not vfp3 ->
+    | Lop(Iload((Double | Double_u), addr)) when !fpu = Soft ->
         let addr' = offset_addressing addr 4 in
         if i.res.(0).loc <> i.arg.(0).loc then begin
           `	ldr	{emit_reg i.res.(0)}, {emit_addressing addr i.arg 0}\n`;
@@ -481,10 +497,10 @@ let emit_instr i =
           | Double_u -> "fldd"
           | _ (* 32-bit quantities *) -> "ldr" in
         `	{emit_string instr}	{emit_reg r}, {emit_addressing addr i.arg 0}\n`; 1
-    | Lop(Istore(Single, addr)) when vfp3 ->
+    | Lop(Istore(Single, addr)) when !fpu >= VFPv3_D16 ->
         `	fcvtsd	s14, {emit_reg i.arg.(0)}\n`;
         `	fsts	s14, {emit_addressing addr i.arg 1}\n`; 2
-    | Lop(Istore((Double | Double_u), addr)) when not vfp3 ->
+    | Lop(Istore((Double | Double_u), addr)) when !fpu = Soft ->
         let addr' = offset_addressing addr 4 in
         `	str	{emit_reg i.arg.(0)}, {emit_addressing addr i.arg 2}\n`;
         `	str	{emit_reg i.arg.(1)}, {emit_addressing addr' i.arg 2}\n`; 2
@@ -528,7 +544,8 @@ let emit_instr i =
           call_gc_sites :=
             { gc_lbl = lbl_call_gc;
               gc_return_lbl = lbl_redo;
-              gc_frame_lbl = lbl_frame } :: !call_gc_sites;
+              gc_frame_lbl = lbl_frame;
+              gc_live = i.live } :: !call_gc_sites;
           3 + ninstr
         end
     | Lop(Iintop(Ilsl | Ilsr | Iasr as op)) ->
@@ -593,18 +610,14 @@ let emit_instr i =
     | Lop(Iintop_imm(op, n)) ->
         let instr = name_for_int_operation op in
         `	{emit_string instr}     {emit_reg i.res.(0)}, {emit_reg i.arg.(0)}, #{emit_int n}\n`; 1
-    | Lop(Inegf) ->
-        if vfp3 then
-          `	fnegd	{emit_reg i.res.(0)}, {emit_reg i.arg.(0)}\n`
-        else
-          `	eor	{emit_reg i.res.(1)}, {emit_reg i.arg.(1)}, #0x80000000\n`;
-        1
+    | Lop(Iabsf) when !fpu = Soft ->
+          `	bic	{emit_reg i.res.(1)}, {emit_reg i.arg.(1)}, #0x80000000\n`; 1
+    | Lop(Inegf) when !fpu = Soft ->
+        `	eor	{emit_reg i.res.(1)}, {emit_reg i.arg.(1)}, #0x80000000\n`; 1
     | Lop(Iabsf) ->
-        if vfp3 then
-          `	fabsd	{emit_reg i.res.(0)}, {emit_reg i.arg.(0)}\n`
-        else
-          `	bic	{emit_reg i.res.(1)}, {emit_reg i.arg.(1)}, #0x80000000\n`;
-        1
+        `	fabsd	{emit_reg i.res.(0)}, {emit_reg i.arg.(0)}\n`; 1
+    | Lop(Inegf) ->
+        `	fnegd	{emit_reg i.res.(0)}, {emit_reg i.arg.(0)}\n`; 1
     | Lop(Ifloatofint) ->
         `	fmsr	{emit_subreg i.res.(0)}, {emit_reg i.arg.(0)}\n`;
         `	fsitod	{emit_reg i.res.(0)}, {emit_subreg i.res.(0)}\n`; 2
@@ -711,7 +724,7 @@ let emit_instr i =
         end;
         4
     | Lswitch jumptbl ->
-        if thumb2 then begin
+        if !arch >= ARMv7 then begin
           let lbl = new_label() in
           `	tbh	[pc, {emit_reg i.arg.(0)}]\n`;
           `{emit_label lbl}:`;
@@ -769,8 +782,10 @@ let rec emit_all ninstr i =
   if i.desc = Lend then () else begin
     let n = emit_instr i in
     let ninstr' = ninstr + n in
-    (* vldr can address up to +/-1KB, ldr can address up to +/-4KB *)
-    let limit = (if vfp3 && !float_literals <> [] then 127 else 511) in
+    (* fldd can address up to +/-1KB, ldr can address up to +/-4KB *)
+    let limit = (if !fpu >= VFPv3_D16 && !float_literals <> []
+                 then 127
+                 else 511) in
     let limit = limit - !num_literals in
     if ninstr' >= limit - 64 && no_fallthrough i.desc then begin
       emit_literals();
@@ -800,7 +815,7 @@ let fundecl fundecl =
   `	.text\n`;
   `	.align	2\n`;
   `	.globl	{emit_symbol fundecl.fun_name}\n`;
-  if thumb2 then begin
+  if !arch >= ARMv7 && !thumb then begin
     `	.thumb\n`;
     `	.thumb_func\n`;
   end;
@@ -843,12 +858,18 @@ let data l =
 
 let begin_assembly() =
   `	.syntax	unified\n`;
-  begin match Config.model with
-    "armv7" ->
-      `	.arch	armv7-a\n`;
-      `	.fpu	vfpv3-d16\n`
-  | _ ->
-      `	.arch	armv4t\n`
+  begin match !arch, !thumb with
+    ARMv4, false -> `	.arch	armv4\n`
+  | ARMv4, true  -> `	.arch	armv4t\n`
+  | ARMv5, false -> `	.arch	armv5\n`
+  | ARMv5, true  -> `	.arch	armv5t\n`
+  | ARMv6, _     -> `	.arch	armv6\n`
+  | ARMv7, _     -> `	.arch	armv7-a\n`
+  end;
+  begin match !fpu with
+    VFPv3_D16 -> `	.fpu	vfpv3-d16\n`
+  | VFPv3_D32 -> `	.fpu	vfpv3-d32\n`
+  | Soft      -> ()
   end;
   `trap_ptr	.req	r8\n`;
   `alloc_ptr	.req	r10\n`;

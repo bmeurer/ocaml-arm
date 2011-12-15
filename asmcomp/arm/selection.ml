@@ -14,12 +14,12 @@
 
 (* Instruction selection for the ARM processor *)
 
-open Misc
-open Cmm
-open Reg
 open Arch
-open Proc
+open Cmm
 open Mach
+open Misc
+open Proc
+open Reg
 
 (* We have 12-bit + sign byte offsets for word accesses,
    8-bit + sign word offsets for float accesses,
@@ -29,7 +29,7 @@ open Mach
 let is_offset n = n < 256 && n > -256
 
 let is_intconst = function
-    Cconst_int _ | Cconst_natint _ -> true
+    Cconst_int _ -> true
   | _ -> false
 
 (* Special constraints on operand and result registers *)
@@ -41,10 +41,10 @@ let pseudoregs_for_operation op arg res =
   (* For mul rd,rm,rs and mla rd,rm,rs,ra (pre-ARMv6) the registers rm
      and rd must be different. We deal with this by pretending that rm
      is also a result of the mul / mla operation. *)
-    Iintop Imul | Ispecific Imla when armv < 6 ->
+    Iintop Imul | Ispecific Imla when !arch < ARMv6 ->
       (arg, [| res.(0); arg.(0) |])
   (* Soft-float Iabsf and Inegf: arg.(0) and res.(0) must be the same *)
-  | Iabsf | Inegf when not vfp3 ->
+  | Iabsf | Inegf when !fpu = Soft ->
       ([|res.(0); arg.(1)|], res)
   (* VFPv3 Imacf...Inmscf: arg.(0) and res.(0) must be the same *)
   | Ispecific(Imacf | Inmacf | Imscf | Inmscf) ->
@@ -60,15 +60,15 @@ class selector = object(self)
 inherit Selectgen.selector_generic as super
 
 method! regs_for tyv =
-  Reg.createv (if vfp3 then
-                 tyv
-               else begin
-                 (* Expand floats into pairs of integer registers (softfp) *)
+  Reg.createv (if !fpu = Soft then begin
+                 (* Expand floats into pairs of integer registers *)
                  let rec expand = function
                    [] -> []
                  | Float :: tyl -> Int :: Int :: expand tyl
                  | ty :: tyl -> ty :: expand tyl in
                  Array.of_list (expand (Array.to_list tyv))
+               end else begin
+                 tyv
                end)
 
 method is_immediate n =
@@ -76,7 +76,7 @@ method is_immediate n =
 
 method! is_simple_expr = function
   (* inlined floating-point ops are simple if their arguments are *)
-  | Cop(Cextcall("sqrt", _, _, _), args) when vfp3 ->
+  | Cop(Cextcall("sqrt", _, _, _), args) when !fpu >= VFPv3_D16 ->
       List.for_all self#is_simple_expr args
   | e -> super#is_simple_expr e
 
@@ -113,7 +113,8 @@ method select_shift_arith op shiftop shiftrevop args =
           | _ -> op_args
           end
       (* Recognize multiply-subtract *)
-      | (Iintop Isub, [arg3; Cop(Cmuli, args)]) as op_args when armv > 6 ->
+      | (Iintop Isub, [arg3; Cop(Cmuli, args)]) as op_args
+        when !arch >= ARMv7 ->
           begin match self#select_operation Cmuli args with
             (Iintop Imul, [arg1; arg2]) ->
               (Ispecific Imls, [arg1; arg2; arg3])
@@ -157,11 +158,9 @@ method! select_operation op args =
       (* see below for fix up of return register *)
       (Iextcall("__aeabi_idivmod", false), args)
   (* Turn floating-point operations into runtime ABI calls for softfp *)
-  | _ when not vfp3 ->
-      self#select_operation_softfp op args
+  | (op, args) when !fpu = Soft -> self#select_operation_softfp op args
   (* Select operations for VFPv3 *)
-  | _ ->
-      self#select_operation_vfp3 op args
+  | (op, args) -> self#select_operation_vfpv3 op args
 
 method private select_operation_softfp op args =
   match (op, args) with
@@ -196,7 +195,7 @@ method private select_operation_softfp op args =
   (* Other operations are regular *)
   | (op, args) -> super#select_operation op args
 
-method private select_operation_vfp3 op args =
+method private select_operation_vfpv3 op args =
   match (op, args) with
   (* Recognize floating-point negate-multiply *)
     (Cnegf, [Cop(Cmulf, args)]) ->
@@ -223,7 +222,7 @@ method private select_operation_vfp3 op args =
 
 method! select_condition = function
   (* Turn floating-point comparisons into runtime ABI calls *)
-    Cop(Ccmpf _ as op, args) when not vfp3 ->
+    Cop(Ccmpf _ as op, args) when !fpu = Soft ->
       begin match self#select_operation_softfp op args with
         (Iintop_imm(Icomp(Iunsigned Ceq), 0), [arg]) -> (Ifalsetest, arg)
       | (Iintop_imm(Icomp(Iunsigned Cne), 0), [arg]) -> (Itruetest, arg)
@@ -233,6 +232,16 @@ method! select_condition = function
       super#select_condition expr
 
 (* Deal with some register constraints *)
+
+method! insert_debug desc dbg rs rd =
+  begin match desc with
+  (* We use __aeabi_idivmod for Cmodi only, and hence we care only
+     for the remainder in r1, so fix up the destination register. *)
+    Iop(Iextcall("__aeabi_idivmod", false)) ->
+      rd.(0) <- phys_reg 1
+  | _ -> ()
+  end;
+  super#insert_debug desc dbg rs rd
 
 method! insert_op_debug op dbg rs rd =
   try
@@ -247,15 +256,19 @@ method! insert_op_debug op dbg rs rd =
 method! insert_op op rs rd =
   self#insert_op_debug op Debuginfo.none rs rd
 
-method! insert_debug desc dbg rs rd =
-  begin match desc with
-  (* We use __aeabi_idivmod for Cmodi only, and hence we care only
-     for the remainder in r1, so fix up the destination register. *)
-    Iop(Iextcall("__aeabi_idivmod", false)) ->
-      rd.(0) <- phys_reg 1
-  | _ -> ()
-  end;
-  super#insert_debug desc dbg rs rd
+method! insert_move rs rd =
+  match rs, rd with
+  (* Insert special FMRRD / FMDRR instructions to transfer
+     floating-point values between VFP registers and pairs
+     of integer registers (required for softfp calling
+     conventions, cf. proc.ml). *)
+    {loc = Reg _; typ = Float}, {loc = Reg n; typ = Int} ->
+      assert (n mod 2 == 0);
+      self#insert (Iop(Ispecific Imrrdf)) [|rs|] [|rd; phys_reg (n + 1)|]
+  | {loc = Reg n; typ = Int}, {loc = Reg _; typ = Float} ->
+      assert (n mod 2 == 0);
+      self#insert (Iop(Ispecific Imdrrf)) [|rs; phys_reg (n + 1)|] [|rd|]
+  | rs, rd -> super#insert_move rs rd
 
 end
 

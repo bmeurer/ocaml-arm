@@ -37,33 +37,43 @@ let word_addressed = false
     r13                   stack pointer
     r14                   return address
     r15                   program counter
-   Floatinng-point register map (VFPv3-D16):
+   Floatinng-point register map (VFPv3):
     d0 - d7               general purpose (not preserved)
     d8 - d15              general purpose (preserved)
+    d16 - d31             generat purpose (not preserved), VFPv3-D32 only
 *)
 
 let int_reg_name =
   [| "r0"; "r1"; "r2"; "r3"; "r4"; "r5"; "r6"; "r7"; "r12" |]
 
 let float_reg_name =
-  if vfp3 then
-    [| "d0"; "d1"; "d2"; "d3"; "d4"; "d5"; "d6"; "d7";
-       "d8"; "d9"; "d10"; "d11"; "d12"; "d13"; "d14"; "d15" |]
-  else
-    [||]
+  [| "d0";  "d1";  "d2";  "d3";  "d4";  "d5";  "d6";  "d7";
+     "d8";  "d9";  "d10"; "d11"; "d12"; "d13"; "d14"; "d15";
+     "d16"; "d17"; "d18"; "d19"; "d20"; "d21"; "d22"; "d23";
+     "d24"; "d25"; "d26"; "d27"; "d28"; "d29"; "d30"; "d31" |]
 
-let num_register_classes = 2
+(* We have three register classes:
+    0 for integer registers
+    1 for VFPv3-D16
+    2 for VFPv3-D32
+   This way we can choose between VFPv3-D16 and VFPv3-D32
+   at (ocamlopt) runtime using command line switches.
+*)
+
+let num_register_classes = 3
 
 let register_class r =
-  match r.typ with
-    Int
-  | Addr -> 0
-  | Float -> 1
+  match (r.typ, !fpu) with
+    (Int | Addr), _  -> 0
+  | Float, VFPv3_D16 -> 1
+  | Float, VFPv3_D32 -> 2
+  | _ -> assert false
 
 let num_available_registers =
-  [| Array.length int_reg_name; Array.length float_reg_name |]
+  [| 9; 16; 32 |]
 
-let first_available_register = [| 0; 100 |]
+let first_available_register =
+  [| 0; 100; 100 |]
 
 let register_name r =
   if r < 100 then int_reg_name.(r) else float_reg_name.(r - 100)
@@ -72,19 +82,19 @@ let rotate_registers = true
 
 (* Representation of hard registers by pseudo-registers *)
 
-let hard_reg cl ty =
-  let o = first_available_register.(cl) in
-  let v = Array.create num_available_registers.(cl) Reg.dummy in
-  for i = 0 to Array.length v - 1 do
-    v.(i) <- Reg.at_location ty (Reg (i + o))
+let hard_int_reg =
+  let v = Array.create 9 Reg.dummy in
+  for i = 0 to 8 do
+    v.(i) <- Reg.at_location Int (Reg i)
   done;
   v
 
-let hard_int_reg =
-  hard_reg 0 Int
-
 let hard_float_reg =
-  hard_reg 1 Float
+  let v = Array.create 32 Reg.dummy in
+  for i = 0 to 31 do
+    v.(i) <- Reg.at_location Float (Reg(100 + i))
+  done;
+  v
 
 let all_phys_regs =
   Array.append hard_int_reg hard_float_reg
@@ -113,13 +123,28 @@ let calling_conventions
           loc.(i) <- stack_slot (make_stack !ofs) ty;
           ofs := !ofs + size_int
         end
+    | Float when abi <> EABI_VFP ->
+        (* Assign floating-point parameters to pairs of
+           integer registers (r(2*n), r(2*n+1)) or 8-byte
+           aligned stack cells [AAPCS, §5.5]. *)
+        int := Misc.align !int (size_float / size_int);
+        if !int < last_int then begin
+          (* We generate special FMRRD and FMDRR instructions
+             to handle this (cf. selection.ml) *)
+          loc.(i) <- phys_reg !int;
+          int := !int + (size_float / size_int)
+        end else begin
+          ofs := Misc.align !ofs size_float;
+          loc.(i) <- stack_slot (make_stack !ofs) Float;
+          ofs := !ofs + size_float
+        end
     | Float ->
-        assert vfp3;
+        assert (!fpu <> Soft);
         if !float <= last_float then begin
           loc.(i) <- phys_reg !float;
           incr float
         end else begin
-          ofs := Misc.align !ofs 8;
+          ofs := Misc.align !ofs size_float;
           loc.(i) <- stack_slot (make_stack !ofs) Float;
           ofs := !ofs + size_float
         end
@@ -130,6 +155,12 @@ let incoming ofs = Incoming ofs
 let outgoing ofs = Outgoing ofs
 let not_supported ofs = fatal_error "Proc.loc_results: cannot call"
 
+(* OCaml calling convention:
+     first integer args in r0...r7
+     first float args in d0...d15 (EABI+VFP)
+     remaining args on stack.
+   Return values in r0...r7 or d0...d15. *)
+
 let loc_arguments arg =
   calling_conventions 0 7 100 115 outgoing arg
 let loc_parameters arg =
@@ -138,49 +169,53 @@ let loc_results res =
   let (loc, _) = calling_conventions 0 7 100 115 not_supported res in loc
 
 (* C calling convention:
-     first integer args in r0 ... r3
-     first float args in d0 ... d7 (ARMv7+VFPv3)
+     first integer args in r0...r3
+     first float args in d0...d7 (EABI+VFP)
      remaining args on stack.
-   Return value in r0 or r0,r1 / d0. *)
+   Return values in r0...r1 or d0. *)
 
 let loc_external_arguments arg =
   calling_conventions 0 3 100 107 outgoing arg
 let loc_external_results res =
-  if vfp3 then
-    let (loc, _) = calling_conventions 0 0 100 100 not_supported res in loc
-  else
-    let (loc, _) = calling_conventions 0 1 100 100 not_supported res in loc
+  let (loc, _) = calling_conventions 0 1 100 100 not_supported res in loc
 
 let loc_exn_bucket = phys_reg 0
 
 (* Registers destroyed by operations *)
 
-let destroyed_at_c_call_noalloc =
-  if vfp3 then                         (* r4-r7, d8-d15 preserved *)
-    Array.of_list(List.map phys_reg
-      [0;1;2;3;8;
-       100;101;102;103;104;105;106;107])
-  else                                  (* r4-r7 preserved *)
-    Array.of_list(List.map phys_reg
-      [0;1;2;3;8])
+let destroyed_at_extcall_noalloc =
+  Array.of_list (List.map
+                   phys_reg
+                   (match abi with
+                      EABI ->       (* r4-r7 preserved *)
+                        [0;1;2;3;8;
+                         100;101;102;103;104;105;106;107;
+                         108;109;110;111;112;113;114;115;
+                         116;116;118;119;120;121;122;123;
+                         124;125;126;127;128;129;130;131]
+                    | EABI_VFP ->   (* r4-r7, d8-d15 preserved *)
+                        [0;1;2;3;8;
+                         100;101;102;103;104;105;106;107;
+                         116;116;118;119;120;121;122;123;
+                         124;125;126;127;128;129;130;131]))
 
-let destroyed_at_c_call =
-  Array.append
-    destroyed_at_c_call_noalloc
+let destroyed_at_extcall =
+  Array.append                      (* also destroys r4-r7 *)
+    destroyed_at_extcall_noalloc
     (Array.of_list(List.map phys_reg [4;5;6;7]))
 
 let destroyed_at_oper = function
     Iop(Icall_ind | Icall_imm _ ) ->
       all_phys_regs
   | Iop(Iextcall(_, true)) ->
-      destroyed_at_c_call
+      destroyed_at_extcall
   | Iop(Iextcall(_, false)) ->
-      destroyed_at_c_call_noalloc
+      destroyed_at_extcall_noalloc
   | Iop(Ialloc n) ->
       [|phys_reg 8|]              (* r12 destroyed *)
   | Iop(Iconst_symbol _) when !pic_code ->
       [|phys_reg 3; phys_reg 8|]  (* r3 and r12 destroyed *)
-  | Iop(Iintoffloat | Istore(Single, _)) when vfp3 ->
+  | Iop(Iintoffloat | Istore(Single, _)) when !fpu >= VFPv3_D16 ->
       [|phys_reg 107|]            (* d7 (s14-s15) destroyed *)
   | _ -> [||]
 
@@ -192,12 +227,12 @@ let safe_register_pressure = function
     Iextcall(_, _) -> 4
   | _ -> 9
 let max_register_pressure = function
-    Iextcall(_, _) -> [| 4; 10 |]
-  | _ -> [| 9; 16 |]
+    Iextcall(_, _) -> [| 4; 10; 10 |]
+  | _ -> [| 9; 16; 32 |]
 
 (* Layout of the stack *)
 
-let num_stack_slots = [| 0; 0 |]
+let num_stack_slots = [| 0; 0; 0 |]
 let contains_calls = ref false
 
 (* Calling the assembler *)

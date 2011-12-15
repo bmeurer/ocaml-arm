@@ -17,20 +17,72 @@
 open Misc
 open Format
 
-let (armv, thumb2, vfp3) =
-  match Config.model with
-  | "armv7" -> (7, true, true)    (* ARMv7 w/ VFPv3 & Thumb-2 *)
-  | _       -> (4, false, false)  (* ARMv4 w/ soft-float *)
+type abi = EABI | EABI_VFP
+type arch = ARMv4 | ARMv5 | ARMv6 | ARMv7
+type fpu = Soft | VFPv3_D16 | VFPv3_D32
+
+let abi =
+  match Config.system with
+    "linux_eabi"   -> EABI
+  | "linux_eabihf" -> EABI_VFP
+  | _ -> assert false
+
+let string_of_arch = function
+    ARMv4 -> "armv4"
+  | ARMv5 -> "armv5"
+  | ARMv6 -> "armv6"
+  | ARMv7 -> "armv7"
+
+let string_of_fpu = function
+    Soft      -> "soft"
+  | VFPv3_D16 -> "vfpv3-d16"
+  | VFPv3_D32 -> "vfpv3-d32"
 
 (* Machine-specific command-line options *)
 
+let (arch, fpu, thumb) =
+  let (def_arch, def_fpu, def_thumb) =
+    begin match abi with
+    (* Defaults for architecture, FPU and Thumb *)
+      EABI     -> ARMv4, Soft,      false
+    | EABI_VFP -> ARMv7, VFPv3_D16, true
+    end in
+  (ref def_arch, ref def_fpu, ref def_thumb)
+
 let pic_code = ref false
 
+let farch spec =
+  arch := (match spec with
+             "armv4" -> ARMv4
+           | "armv5" -> ARMv5
+           | "armv6" -> ARMv6
+           | "armv7" -> ARMv7
+           | spec -> raise (Arg.Bad spec))
+
+let ffpu spec =
+  fpu := (match spec with
+            "soft" when abi <> EABI_VFP -> Soft
+          | "vfpv3-d16"                 -> VFPv3_D16
+          | "vfpv3-d32"                 -> VFPv3_D32
+          | spec -> raise (Arg.Bad spec))
+
 let command_line_options =
-  [ "-fPIC", Arg.Set pic_code,
+  [ "-farch", Arg.String farch,
+      "<arch>  Select the ARM target architecture"
+      ^ " (default: " ^ (string_of_arch !arch) ^ ")";
+    "-ffpu", Arg.String ffpu,
+      "<fpu>  Select the floating-point hardware"
+      ^ " (default: " ^ (string_of_fpu !fpu) ^ ")";
+    "-fPIC", Arg.Set pic_code,
       " Generate position-independent machine code";
     "-fno-PIC", Arg.Clear pic_code,
-      " Generate position-dependent machine code" ]
+      " Generate position-dependent machine code";
+    "-fthumb", Arg.Set thumb,
+      " Enable Thumb/Thumb-2 code generation"
+      ^ (if !thumb then " (default)" else "");
+    "-fno-thumb", Arg.Clear thumb,
+      " Disable Thumb/Thumb-2 code generation"
+      ^ (if not !thumb then " (default" else "")]
 
 (* Addressing modes *)
 
@@ -56,6 +108,8 @@ type specific_operation =
   | Imscf   (* floating-point multiply-subtract *)
   | Inmscf  (* floating-point negate-multiply-subtract *)
   | Isqrtf  (* floating-point square root *)
+  | Imdrrf  (* ARM to VFP register transfer *)
+  | Imrrdf  (* VFP to ARM register transfer *)
 
 and arith_operation =
     Ishiftadd
@@ -140,6 +194,13 @@ let print_specific_operation printreg op ppf arg =
   | Isqrtf ->
       fprintf ppf "sqrtf %a"
         printreg arg.(0)
+  | Imdrrf ->
+      fprintf ppf "%a %a"
+        printreg arg.(0)
+        printreg arg.(1)
+  | Imrrdf ->
+      fprintf ppf "%a"
+        printreg arg.(0)
 
 (* Recognize immediate operands *)
 
@@ -150,7 +211,7 @@ let print_specific_operation printreg op ppf arg =
 let is_immediate n =
   let n = ref n in
   let s = ref 0 in
-  let m = if thumb2 then 24 else 30 in
+  let m = if !thumb then 24 else 30 in
   while (!s <= m && Int32.logand !n 0xffl <> !n) do
     n := Int32.logor (Int32.shift_right_logical !n 2) (Int32.shift_left !n 30);
     s := !s + 2
