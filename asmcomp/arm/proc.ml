@@ -122,23 +122,9 @@ let calling_conventions
           loc.(i) <- stack_slot (make_stack !ofs) ty;
           ofs := !ofs + size_int
         end
-    | Float when abi <> EABI_VFP ->
-        (* Assign floating-point parameters to pairs of
-           integer registers (r(2*n), r(2*n+1)) or 8-byte
-           aligned stack cells [AAPCS, §5.5]. *)
-        int := Misc.align !int (size_float / size_int);
-        if !int < last_int then begin
-          (* We generate special FMRRD and FMDRR instructions
-             to handle this (cf. selection.ml) *)
-          loc.(i) <- phys_reg !int;
-          int := !int + (size_float / size_int)
-        end else begin
-          ofs := Misc.align !ofs size_float;
-          loc.(i) <- stack_slot (make_stack !ofs) Float;
-          ofs := !ofs + size_float
-        end
     | Float ->
-        assert (!fpu <> Soft);
+        assert (abi = EABI_VFP);
+        assert (!fpu >= VFPv3_D16);
         if !float <= last_float then begin
           loc.(i) <- phys_reg !float;
           incr float

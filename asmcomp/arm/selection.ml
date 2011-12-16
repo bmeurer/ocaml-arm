@@ -282,20 +282,6 @@ method! insert_op_debug op dbg rs rd =
 method! insert_op op rs rd =
   self#insert_op_debug op Debuginfo.none rs rd
 
-method! insert_move rs rd =
-  match rs, rd with
-  (* Insert special FMRRD / FMDRR instructions to transfer
-     floating-point values between VFP registers and pairs
-     of integer registers (required for softfp calling
-     conventions, cf. proc.ml). *)
-    {loc = Reg _; typ = Float}, {loc = Reg n; typ = Int} ->
-      assert (n mod 2 == 0);
-      self#insert (Iop(Ispecific Imrrdf)) [|rs|] [|rd; phys_reg (n + 1)|]
-  | {loc = Reg n; typ = Int}, {loc = Reg _; typ = Float} ->
-      assert (n mod 2 == 0);
-      self#insert (Iop(Ispecific Imdrrf)) [|rs; phys_reg (n + 1)|] [|rd|]
-  | rs, rd -> super#insert_move rs rd
-
 end
 
 let fundecl f = (new selector)#emit_fundecl f

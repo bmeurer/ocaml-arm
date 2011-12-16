@@ -63,9 +63,9 @@ let farch spec =
 
 let ffpu spec =
   fpu := (match spec with
-            "soft" when abi <> EABI_VFP -> Soft
-          | "vfpv3-d16"                 -> VFPv3_D16
-          | "vfpv3"                     -> VFPv3
+            "soft" when abi <> EABI_VFP     -> Soft
+          | "vfpv3-d16" when abi = EABI_VFP -> VFPv3_D16
+          | "vfpv3" when abi = EABI_VFP     -> VFPv3
           | spec -> raise (Arg.Bad spec))
 
 let command_line_options =
@@ -110,8 +110,6 @@ type specific_operation =
   | Imscf   (* floating-point multiply-subtract *)
   | Inmscf  (* floating-point negate-multiply-subtract *)
   | Isqrtf  (* floating-point square root *)
-  | Imdrrf  (* ARM to VFP register transfer *)
-  | Imrrdf  (* VFP to ARM register transfer *)
 
 and arith_operation =
     Ishiftadd
@@ -195,13 +193,6 @@ let print_specific_operation printreg op ppf arg =
         printreg arg.(2)
   | Isqrtf ->
       fprintf ppf "sqrtf %a"
-        printreg arg.(0)
-  | Imdrrf ->
-      fprintf ppf "%a %a"
-        printreg arg.(0)
-        printreg arg.(1)
-  | Imrrdf ->
-      fprintf ppf "%a"
         printreg arg.(0)
 
 (* Recognize immediate operands *)
