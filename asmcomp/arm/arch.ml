@@ -18,7 +18,7 @@ open Misc
 open Format
 
 type abi = EABI | EABI_VFP
-type arch = ARMv4 | ARMv5 | ARMv6 | ARMv7
+type arch = ARMv4 | ARMv5 | ARMv5TE | ARMv6 | ARMv7
 type fpu = Soft | VFPv3_D16 | VFPv3
 
 let abi =
@@ -28,10 +28,11 @@ let abi =
   | _ -> assert false
 
 let string_of_arch = function
-    ARMv4 -> "armv4"
-  | ARMv5 -> "armv5"
-  | ARMv6 -> "armv6"
-  | ARMv7 -> "armv7"
+    ARMv4   -> "armv4"
+  | ARMv5   -> "armv5"
+  | ARMv5TE -> "armv5te"
+  | ARMv6   -> "armv6"
+  | ARMv7   -> "armv7"
 
 let string_of_fpu = function
     Soft      -> "soft"
@@ -53,10 +54,11 @@ let pic_code = ref false
 
 let farch spec =
   arch := (match spec with
-             "armv4" -> ARMv4
-           | "armv5" -> ARMv5
-           | "armv6" -> ARMv6
-           | "armv7" -> ARMv7
+             "armv4"   -> ARMv4
+           | "armv5"   -> ARMv5
+           | "armv5te" -> ARMv5TE
+           | "armv6"   -> ARMv6
+           | "armv7"   -> ARMv7
            | spec -> raise (Arg.Bad spec))
 
 let ffpu spec =

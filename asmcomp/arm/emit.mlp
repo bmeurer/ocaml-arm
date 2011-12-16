@@ -458,14 +458,19 @@ let emit_instr i =
         `	flds	s14, {emit_addressing addr i.arg 0}\n`;
         `	fcvtds	{emit_reg i.res.(0)}, s14\n`; 2
     | Lop(Iload((Double | Double_u), addr)) when !fpu = Soft ->
-        let addr' = offset_addressing addr 4 in
-        if i.res.(0).loc <> i.arg.(0).loc then begin
-          `	ldr	{emit_reg i.res.(0)}, {emit_addressing addr i.arg 0}\n`;
-          `	ldr	{emit_reg i.res.(1)}, {emit_addressing addr' i.arg 0}\n`
+        if !arch >= ARMv5TE then begin
+          (* ARMv5TE+ has double word load/store *)
+          `	ldrd	{emit_reg i.res.(0)}, {emit_reg i.res.(1)}, {emit_addressing addr i.arg 0}\n`; 1
         end else begin
-          `	ldr	{emit_reg i.res.(1)}, {emit_addressing addr' i.arg 0}\n`;
-          `	ldr	{emit_reg i.res.(0)}, {emit_addressing addr i.arg 0}\n`
-        end; 2
+          let addr' = offset_addressing addr 4 in
+          if i.res.(0).loc <> i.arg.(0).loc then begin
+            `	ldr	{emit_reg i.res.(0)}, {emit_addressing addr i.arg 0}\n`;
+            `	ldr	{emit_reg i.res.(1)}, {emit_addressing addr' i.arg 0}\n`
+          end else begin
+            `	ldr	{emit_reg i.res.(1)}, {emit_addressing addr' i.arg 0}\n`;
+            `	ldr	{emit_reg i.res.(0)}, {emit_addressing addr i.arg 0}\n`
+          end; 2
+        end
     | Lop(Iload(size, addr)) ->
         let r = i.res.(0) in
         let instr =
@@ -482,9 +487,14 @@ let emit_instr i =
         `	fcvtsd	s14, {emit_reg i.arg.(0)}\n`;
         `	fsts	s14, {emit_addressing addr i.arg 1}\n`; 2
     | Lop(Istore((Double | Double_u), addr)) when !fpu = Soft ->
-        let addr' = offset_addressing addr 4 in
-        `	str	{emit_reg i.arg.(0)}, {emit_addressing addr i.arg 2}\n`;
-        `	str	{emit_reg i.arg.(1)}, {emit_addressing addr' i.arg 2}\n`; 2
+        if !arch >= ARMv5TE then begin
+          (* ARMv5TE+ has double word load/store *)
+          `	strd	{emit_reg i.arg.(0)}, {emit_reg i.arg.(1)}, {emit_addressing addr i.arg 2}\n`; 1
+        end else begin
+          let addr' = offset_addressing addr 4 in
+          `	str	{emit_reg i.arg.(0)}, {emit_addressing addr i.arg 2}\n`;
+          `	str	{emit_reg i.arg.(1)}, {emit_addressing addr' i.arg 2}\n`; 2
+        end
     | Lop(Istore(size, addr)) ->
         let r = i.arg.(0) in
         let instr =
@@ -839,10 +849,11 @@ let data l =
 let begin_assembly() =
   `	.syntax	unified\n`;
   begin match !arch with
-  | ARMv4 -> `	.arch	armv4t\n`
-  | ARMv5 -> `	.arch	armv5t\n`
-  | ARMv6 -> `	.arch	armv6\n`
-  | ARMv7 -> `	.arch	armv7-a\n`
+  | ARMv4   -> `	.arch	armv4t\n`
+  | ARMv5   -> `	.arch	armv5t\n`
+  | ARMv5TE -> `	.arch	armv5te\n`
+  | ARMv6   -> `	.arch	armv6\n`
+  | ARMv7   -> `	.arch	armv7-a\n`
   end;
   begin match !fpu with
     Soft      -> `	.fpu	softvfp\n`
