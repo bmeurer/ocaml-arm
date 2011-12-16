@@ -36,9 +36,9 @@
         cmp     \reg, #0
         beq     \lbl
         .endm
-        .macro  vpop
+        .macro  vpop regs
         .endm
-        .macro  vpush
+        .macro  vpush regs
         .endm
 #endif
 
