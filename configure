@@ -802,6 +802,7 @@ case "$arch,$model,$system" in
     case "$nativecc" in gcc*) ;; *) cc_profile='-xpg';; esac;;
   amd64,*,linux) profiling='prof';;
   amd64,*,gnu) profiling='prof';;
+  arm,*,linux*) profiling='prof';;
   *) profiling='noprof';;
 esac
 

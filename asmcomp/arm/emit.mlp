@@ -786,6 +786,15 @@ let rec emit_all ninstr i =
       emit_all ninstr' i.next
   end
 
+(* Emission of the profiling prelude *)
+
+let emit_profile() =
+  match Config.system with
+    "linux_eabi" | "linux_eabihf" ->
+      `	push	\{lr}\n`;
+      `	{emit_call "__gnu_mcount_nc"}\n`
+  | _ -> ()
+
 (* Emission of a function declaration *)
 
 let fundecl fundecl =
@@ -806,6 +815,7 @@ let fundecl fundecl =
   else
     `	.arm\n`;
   `{emit_symbol fundecl.fun_name}:\n`;
+  if !Clflags.gprofile then emit_profile();
   let n = frame_size() in
   ignore(emit_stack_adjustment "sub" n);
   if !contains_calls then
