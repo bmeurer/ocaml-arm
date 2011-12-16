@@ -54,11 +54,11 @@ let pic_code = ref false
 
 let farch spec =
   arch := (match spec with
-             "armv4"   -> ARMv4
-           | "armv5"   -> ARMv5
-           | "armv5te" -> ARMv5TE
-           | "armv6"   -> ARMv6
-           | "armv7"   -> ARMv7
+             "armv4" when abi <> EABI_VFP   -> ARMv4
+           | "armv5" when abi <> EABI_VFP   -> ARMv5
+           | "armv5te" when abi <> EABI_VFP -> ARMv5TE
+           | "armv6" when abi <> EABI_VFP   -> ARMv6
+           | "armv7"                        -> ARMv7
            | spec -> raise (Arg.Bad spec))
 
 let ffpu spec =
