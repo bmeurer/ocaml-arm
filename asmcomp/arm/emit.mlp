@@ -838,13 +838,11 @@ let data l =
 
 let begin_assembly() =
   `	.syntax	unified\n`;
-  begin match !arch, !thumb with
-    ARMv4, false -> `	.arch	armv4\n`
-  | ARMv4, true  -> `	.arch	armv4t\n`
-  | ARMv5, false -> `	.arch	armv5\n`
-  | ARMv5, true  -> `	.arch	armv5t\n`
-  | ARMv6, _     -> `	.arch	armv6\n`
-  | ARMv7, _     -> `	.arch	armv7-a\n`
+  begin match !arch with
+  | ARMv4 -> `	.arch	armv4t\n`
+  | ARMv5 -> `	.arch	armv5t\n`
+  | ARMv6 -> `	.arch	armv6\n`
+  | ARMv7 -> `	.arch	armv7-a\n`
   end;
   begin match !fpu with
     Soft      -> `	.fpu	softvfp\n`
