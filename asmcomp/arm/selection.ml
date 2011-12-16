@@ -34,7 +34,7 @@ let is_offset chunk n =
     when not !thumb ->
       n >= -4095 && n <= 4095
   (* Thumb-2 load/store have -255 to 4095 *)
-  | _ when !arch >= ARMv7 && !thumb ->
+  | _ when !arch > ARMv6 && !thumb ->
       n >= -255 && n <= 4095
   (* Everything else has -255 to 255 *)
   | _ ->
@@ -133,7 +133,7 @@ method select_shift_arith op shiftop shiftrevop args =
           end
       (* Recognize multiply-subtract *)
       | (Iintop Isub, [arg3; Cop(Cmuli, args)]) as op_args
-        when !arch >= ARMv7 ->
+        when !arch > ARMv6 ->
           begin match self#select_operation Cmuli args with
             (Iintop Imul, [arg1; arg2]) ->
               (Ispecific Imls, [arg1; arg2; arg3])

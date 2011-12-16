@@ -214,7 +214,7 @@ let emit_intconst dst n =
     `	movs	{emit_reg dst}, #{emit_int32 n}\n`; 1
   end else if is_immediate nr then begin
     `	mvn	{emit_reg dst}, #{emit_int32 nr}\n`; 1
-  end else if !arch >= ARMv7 then begin
+  end else if !arch > ARMv6 then begin
     let nl = Int32.logand 0xffffl n in
     let nh = Int32.logand 0xffffl (Int32.shift_right_logical n 16) in
     if nh = 0l then begin
@@ -329,7 +329,7 @@ let emit_load_symbol_addr dst s =
     `{emit_label lbl_pic}:	add	{emit_reg tmp}, pc, {emit_reg tmp}\n`;
     `	ldr	{emit_reg dst}, [{emit_reg tmp}, {emit_reg dst}] @ {emit_symbol s}\n`;
     4
-  end else if !arch >= ARMv7 && not !Clflags.dlcode && !fastcode_flag then begin
+  end else if !arch > ARMv6 && not !Clflags.dlcode && !fastcode_flag then begin
     `	movw	{emit_reg dst}, #:lower16:{emit_symbol s}\n`;
     `	movt	{emit_reg dst}, #:upper16:{emit_symbol s}\n`;
     2
@@ -710,7 +710,7 @@ let emit_instr i =
         end;
         4
     | Lswitch jumptbl ->
-        if !arch >= ARMv7 then begin
+        if !arch > ARMv6 then begin
           let lbl = new_label() in
           `	tbh	[pc, {emit_reg i.arg.(0)}]\n`;
           `{emit_label lbl}:`;
@@ -810,7 +810,7 @@ let fundecl fundecl =
   `	.text\n`;
   `	.align	2\n`;
   `	.globl	{emit_symbol fundecl.fun_name}\n`;
-  if !arch >= ARMv7 && !thumb then
+  if !arch > ARMv6 && !thumb then
     `	.thumb\n`
   else
     `	.arm\n`;
@@ -859,6 +859,7 @@ let begin_assembly() =
   | ARMv5   -> `	.arch	armv5t\n`
   | ARMv5TE -> `	.arch	armv5te\n`
   | ARMv6   -> `	.arch	armv6\n`
+  | ARMv6T2 -> `	.arch	armv6t2\n`
   | ARMv7   -> `	.arch	armv7-a\n`
   end;
   begin match !fpu with

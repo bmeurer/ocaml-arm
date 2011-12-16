@@ -18,7 +18,7 @@ open Misc
 open Format
 
 type abi = EABI | EABI_VFP
-type arch = ARMv4 | ARMv5 | ARMv5TE | ARMv6 | ARMv7
+type arch = ARMv4 | ARMv5 | ARMv5TE | ARMv6 | ARMv6T2 | ARMv7
 type fpu = Soft | VFPv3_D16 | VFPv3
 
 let abi =
@@ -32,6 +32,7 @@ let string_of_arch = function
   | ARMv5   -> "armv5"
   | ARMv5TE -> "armv5te"
   | ARMv6   -> "armv6"
+  | ARMv6T2 -> "armv6t2"
   | ARMv7   -> "armv7"
 
 let string_of_fpu = function
@@ -58,6 +59,7 @@ let farch spec =
            | "armv5" when abi <> EABI_VFP   -> ARMv5
            | "armv5te" when abi <> EABI_VFP -> ARMv5TE
            | "armv6" when abi <> EABI_VFP   -> ARMv6
+           | "armv6t2" when abi <> EABI_VFP -> ARMv6T2
            | "armv7"                        -> ARMv7
            | spec -> raise (Arg.Bad spec))
 
