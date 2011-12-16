@@ -756,14 +756,6 @@ let emit_instr i =
 
 (* Emission of an instruction sequence *)
 
-let no_fallthrough = function
-    Lop(Itailcall_ind | Itailcall_imm _) -> true
-  | Lreturn -> true
-  | Lbranch _ -> true
-  | Lswitch _ -> true
-  | Lraise -> true
-  | _ -> false
-
 let rec emit_all ninstr i =
   if i.desc = Lend then () else begin
     let n = emit_instr i in
@@ -773,7 +765,7 @@ let rec emit_all ninstr i =
                  then 127
                  else 511) in
     let limit = limit - !num_literals in
-    if ninstr' >= limit - 64 && no_fallthrough i.desc then begin
+    if ninstr' >= limit - 64 && not(has_fallthrough i.desc) then begin
       emit_literals();
       emit_all 0 i.next
     end else if !num_literals != 0 && ninstr' >= limit then begin
