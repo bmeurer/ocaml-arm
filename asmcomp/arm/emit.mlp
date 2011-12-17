@@ -460,18 +460,23 @@ let emit_instr i =
         `	flds	s14, {emit_addressing addr i.arg 0}\n`;
         `	fcvtds	{emit_reg i.res.(0)}, s14\n`; 2
     | Lop(Iload((Double | Double_u), addr)) when !fpu = Soft ->
-        if !arch >= ARMv5TE then begin
-          (* ARMv5TE+ has double word load/store *)
-          `	ldrd	{emit_reg i.res.(0)}, {emit_reg i.res.(1)}, {emit_addressing addr i.arg 0}\n`; 1
-        end else begin
-          let addr' = offset_addressing addr 4 in
-          if i.res.(0).loc <> i.arg.(0).loc then begin
-            `	ldr	{emit_reg i.res.(0)}, {emit_addressing addr i.arg 0}\n`;
-            `	ldr	{emit_reg i.res.(1)}, {emit_addressing addr' i.arg 0}\n`
-          end else begin
-            `	ldr	{emit_reg i.res.(1)}, {emit_addressing addr' i.arg 0}\n`;
-            `	ldr	{emit_reg i.res.(0)}, {emit_addressing addr i.arg 0}\n`
-          end; 2
+        (* Use LDM or LDRD if possible *)
+        begin match i.res.(0), i.res.(1), addr with
+          {loc = Reg rt}, {loc = Reg rt2}, Iindexed 0
+          when rt < rt2 ->
+            `	ldm	{emit_reg i.arg.(0)}, \{{emit_reg i.res.(0)}, {emit_reg i.res.(1)}}\n`; 1
+        | {loc = Reg rt}, {loc = Reg rt2}, addr
+          when !arch >= ARMv5TE && rt mod 2 == 0 && rt2 = rt + 1 ->
+            `	ldrd	{emit_reg i.res.(0)}, {emit_reg i.res.(1)}, {emit_addressing addr i.arg 0}\n`; 1
+        | _ ->
+            let addr' = offset_addressing addr 4 in
+            if i.res.(0).loc <> i.arg.(0).loc then begin
+              `	ldr	{emit_reg i.res.(0)}, {emit_addressing addr i.arg 0}\n`;
+              `	ldr	{emit_reg i.res.(1)}, {emit_addressing addr' i.arg 0}\n`
+            end else begin
+              `	ldr	{emit_reg i.res.(1)}, {emit_addressing addr' i.arg 0}\n`;
+              `	ldr	{emit_reg i.res.(0)}, {emit_addressing addr i.arg 0}\n`
+            end; 2
         end
     | Lop(Iload(size, addr)) ->
         let r = i.res.(0) in
@@ -489,13 +494,18 @@ let emit_instr i =
         `	fcvtsd	s14, {emit_reg i.arg.(0)}\n`;
         `	fsts	s14, {emit_addressing addr i.arg 1}\n`; 2
     | Lop(Istore((Double | Double_u), addr)) when !fpu = Soft ->
-        if !arch >= ARMv5TE then begin
-          (* ARMv5TE+ has double word load/store *)
-          `	strd	{emit_reg i.arg.(0)}, {emit_reg i.arg.(1)}, {emit_addressing addr i.arg 2}\n`; 1
-        end else begin
-          let addr' = offset_addressing addr 4 in
-          `	str	{emit_reg i.arg.(0)}, {emit_addressing addr i.arg 2}\n`;
-          `	str	{emit_reg i.arg.(1)}, {emit_addressing addr' i.arg 2}\n`; 2
+        (* Use STM or STRD if possible *)
+        begin match i.arg.(0), i.arg.(1), addr with
+          {loc = Reg rt}, {loc = Reg rt2}, Iindexed 0
+          when rt < rt2 ->
+            `	stm	{emit_reg i.arg.(2)}, \{{emit_reg i.arg.(0)}, {emit_reg i.arg.(1)}}\n`; 1
+        | {loc = Reg rt}, {loc = Reg rt2}, addr
+          when !arch >= ARMv5TE && rt mod 2 == 0 && rt2 = rt + 1 ->
+            `	strd	{emit_reg i.arg.(0)}, {emit_reg i.arg.(1)}, {emit_addressing addr i.arg 2}\n`; 1
+        | _ ->
+            let addr' = offset_addressing addr 4 in
+            `	str	{emit_reg i.arg.(0)}, {emit_addressing addr i.arg 2}\n`;
+            `	str	{emit_reg i.arg.(1)}, {emit_addressing addr' i.arg 2}\n`; 2
         end
     | Lop(Istore(size, addr)) ->
         let r = i.arg.(0) in
