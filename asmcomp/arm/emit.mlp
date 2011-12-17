@@ -728,7 +728,7 @@ let emit_instr i =
         end;
         4
     | Lswitch jumptbl ->
-        if !arch > ARMv6 then begin
+        if !arch > ARMv6 && !thumb then begin
           let lbl = new_label() in
           `	tbh	[pc, {emit_reg i.arg.(0)}]\n`;
           `{emit_label lbl}:`;
