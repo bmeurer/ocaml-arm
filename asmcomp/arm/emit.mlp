@@ -561,7 +561,7 @@ let rec emit_all ninstr i =
     let n = emit_instr i in
     let ninstr' = ninstr + n in
     let limit = 511 - !num_literals in
-    if ninstr' >= limit - 64 && no_fallthrough i.desc then begin
+    if ninstr' >= limit - 64 && not(has_fallthrough i.desc) then begin
       emit_constants();
       emit_all 0 i.next
     end else
