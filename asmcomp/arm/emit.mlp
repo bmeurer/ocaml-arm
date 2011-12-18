@@ -596,7 +596,9 @@ let fundecl fundecl =
   `{emit_label !tailrec_entry_point}:\n`;
   emit_all 0 fundecl.fun_body;
   emit_constants();
-  List.iter emit_call_bound_error !bound_error_sites
+  List.iter emit_call_bound_error !bound_error_sites;
+  `	.type	{emit_symbol fundecl.fun_name}, %function\n`;
+  `	.size	{emit_symbol fundecl.fun_name}, .-{emit_symbol fundecl.fun_name}\n`
 
 (* Emission of data *)
 
