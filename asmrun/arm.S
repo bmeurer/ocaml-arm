@@ -23,7 +23,8 @@ alloc_limit     .req    r10
 
 /* Allocation functions and GC interface */
 
-        .globl caml_call_gc
+        .align  2
+        .globl  caml_call_gc
 caml_call_gc:
     /* Record return address and desired size */
     /* Can use alloc_limit as a temporary since it will be reloaded by
@@ -42,7 +43,8 @@ caml_call_gc:
         .type   caml_call_gc, %function
         .size   caml_call_gc, .-caml_call_gc
 
-        .globl caml_alloc1
+        .align  2
+        .globl  caml_alloc1
 caml_alloc1:
         sub     alloc_ptr, alloc_ptr, #8
         cmp     alloc_ptr, alloc_limit
@@ -57,7 +59,8 @@ caml_alloc1:
         .type   caml_alloc1, %function
         .size   caml_alloc1, .-caml_alloc1
 
-        .globl caml_alloc2
+        .align  2
+        .globl  caml_alloc2
 caml_alloc2:
         sub     alloc_ptr, alloc_ptr, #12
         cmp     alloc_ptr, alloc_limit
@@ -72,7 +75,8 @@ caml_alloc2:
         .type   caml_alloc2, %function
         .size   caml_alloc2, .-caml_alloc2
 
-        .globl caml_alloc3
+        .align  2
+        .globl  caml_alloc3
 caml_alloc3:
         sub     alloc_ptr, alloc_ptr, #16
         cmp     alloc_ptr, alloc_limit
@@ -87,7 +91,8 @@ caml_alloc3:
         .type   caml_alloc3, %function
         .size   caml_alloc3, .-caml_alloc3
 
-        .globl caml_allocN
+        .align  2
+        .globl  caml_allocN
 caml_allocN:
         sub     alloc_ptr, alloc_ptr, r12
         cmp     alloc_ptr, alloc_limit
@@ -143,7 +148,8 @@ caml_allocN:
 /* Call a C function from Caml */
 /* Function to call is in r12 */
 
-        .globl caml_c_call
+        .align  2
+        .globl  caml_c_call
 caml_c_call:
     /* Preserve return address in callee-save register r4 */
         mov     r4, lr
@@ -171,7 +177,8 @@ caml_c_call:
 
 /* Start the Caml program */
 
-        .globl caml_start_program
+        .align  2
+        .globl  caml_start_program
 caml_start_program:
         ldr     r12, =caml_program
 
@@ -248,7 +255,8 @@ caml_start_program:
 
 /* Raise an exception from C */
 
-        .globl caml_raise_exception
+        .align  2
+        .globl  caml_raise_exception
 caml_raise_exception:
     /* Reload Caml allocation pointers */
         ldr     r12, =caml_young_ptr
@@ -265,7 +273,8 @@ caml_raise_exception:
 
 /* Callback from C to Caml */
 
-        .globl caml_callback_exn
+        .align  2
+        .globl  caml_callback_exn
 caml_callback_exn:
     /* Initial shuffling of arguments (r0 = closure, r1 = first arg) */
         mov     r12, r0
@@ -276,7 +285,8 @@ caml_callback_exn:
         .type   caml_callback_exn, %function
         .size   caml_callback_exn, .-caml_callback_exn
 
-        .globl caml_callback2_exn
+        .align  2
+        .globl  caml_callback2_exn
 caml_callback2_exn:
     /* Initial shuffling of arguments (r0 = closure, r1 = arg1, r2 = arg2) */
         mov     r12, r0
@@ -288,7 +298,8 @@ caml_callback2_exn:
         .type   caml_callback2_exn, %function
         .size   caml_callback2_exn, .-caml_callback2_exn
 
-        .globl caml_callback3_exn
+        .align  2
+        .globl  caml_callback3_exn
 caml_callback3_exn:
     /* Initial shuffling of arguments */
     /* (r0 = closure, r1 = arg1, r2 = arg2, r3 = arg3) */
@@ -302,7 +313,8 @@ caml_callback3_exn:
         .type   caml_callback3_exn, %function
         .size   caml_callback3_exn, .-caml_callback3_exn
 
-        .globl caml_ml_array_bound_error
+        .align  2
+        .globl  caml_ml_array_bound_error
 caml_ml_array_bound_error:
     /* Load address of [caml_array_bound_error] in r12 */
         ldr     r12, =caml_array_bound_error
@@ -318,7 +330,8 @@ caml_requested_size:
 /* GC roots for callback */
 
         .data
-        .globl caml_system__frametable
+        .align  2
+        .globl  caml_system__frametable
 caml_system__frametable:
         .word   1               /* one descriptor */
         .word   .Lcaml_retaddr  /* return address into callback */
