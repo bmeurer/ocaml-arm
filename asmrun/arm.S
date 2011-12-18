@@ -39,6 +39,8 @@ caml_call_gc:
         ldr     r12, [r12, #0]
         sub     alloc_ptr, alloc_ptr, r12
         bx      lr
+        .type   caml_call_gc, %function
+        .size   caml_call_gc, .-caml_call_gc
 
         .globl caml_alloc1
 caml_alloc1:
@@ -52,6 +54,8 @@ caml_alloc1:
         bl      .Linvoke_gc
     /* Try again */
         b       caml_alloc1
+        .type   caml_alloc1, %function
+        .size   caml_alloc1, .-caml_alloc1
 
         .globl caml_alloc2
 caml_alloc2:
@@ -65,6 +69,8 @@ caml_alloc2:
         bl      .Linvoke_gc
     /* Try again */
         b       caml_alloc2
+        .type   caml_alloc2, %function
+        .size   caml_alloc2, .-caml_alloc2
 
         .globl caml_alloc3
 caml_alloc3:
@@ -78,6 +84,8 @@ caml_alloc3:
         bl      .Linvoke_gc
     /* Try again */
         b       caml_alloc3
+        .type   caml_alloc3, %function
+        .size   caml_alloc3, .-caml_alloc3
 
         .globl caml_allocN
 caml_allocN:
@@ -97,6 +105,8 @@ caml_allocN:
         ldr     r12, .Lcaml_requested_size
         ldr     r12, [r12, #0]
         b       caml_allocN
+        .type   caml_allocN, %function
+        .size   caml_allocN, .-caml_allocN
 
 /* Shared code to invoke the GC */
 .Linvoke_gc:
@@ -156,6 +166,8 @@ caml_c_call:
         ldr     alloc_limit, [r5, #0]
     /* Return */
         bx      r4
+        .type   caml_c_call, %function
+        .size   caml_c_call, .-caml_c_call
 
 /* Start the Caml program */
 
@@ -221,6 +233,8 @@ caml_start_program:
     /* Reload callee-save registers and return */
         ldmfd   sp!, {r4,r5,r6,r7,r8,r10,r11,lr}
         bx      lr
+        .type   caml_start_program, %function
+        .size   caml_start_program, .-caml_start_program
 
     /* The trap handler */
 .Ltrap_handler:
@@ -246,6 +260,8 @@ caml_raise_exception:
         ldr     sp, [r12, #0]
     /* Pop previous handler and addr of trap, and jump to it */
         ldmfd   sp!, {trap_ptr, pc}
+        .type   caml_raise_exception, %function
+        .size   caml_raise_exception, .-caml_raise_exception
 
 /* Callback from C to Caml */
 
@@ -257,6 +273,8 @@ caml_callback_exn:
         mov     r1, r12           /* r1 = closure environment */
         ldr     r12, [r12, #0]    /* code pointer */
         b       .Ljump_to_caml
+        .type   caml_callback_exn, %function
+        .size   caml_callback_exn, .-caml_callback_exn
 
         .globl caml_callback2_exn
 caml_callback2_exn:
@@ -267,6 +285,8 @@ caml_callback2_exn:
         mov     r2, r12          /* r2 = closure environment */
         ldr     r12, .Lcaml_apply2
         b       .Ljump_to_caml
+        .type   caml_callback2_exn, %function
+        .size   caml_callback2_exn, .-caml_callback2_exn
 
         .globl caml_callback3_exn
 caml_callback3_exn:
@@ -279,6 +299,8 @@ caml_callback3_exn:
         mov     r3, r12         /* r3 = closure environment */
         ldr     r12, .Lcaml_apply3
         b       .Ljump_to_caml
+        .type   caml_callback3_exn, %function
+        .size   caml_callback3_exn, .-caml_callback3_exn
 
         .globl caml_ml_array_bound_error
 caml_ml_array_bound_error:
@@ -286,6 +308,8 @@ caml_ml_array_bound_error:
         ldr     r12, .Lcaml_array_bound_error
     /* Call that function */
         b       caml_c_call
+        .type   caml_ml_array_bound_error, %function
+        .size   caml_ml_array_bound_error, .-caml_ml_array_bound_error
 
 /* Global references */
 
@@ -316,3 +340,5 @@ caml_system__frametable:
         .short  -1              /* negative frame size => use callback link */
         .short  0               /* no roots */
         .align  2
+        .type   caml_system__frametable, %object
+        .size   caml_system__frametable, .-caml_system__frametable

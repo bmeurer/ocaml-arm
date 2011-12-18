@@ -557,7 +557,7 @@ let fundecl fundecl =
   Hashtbl.clear float_constants;
   `	.text\n`;
   `	.align	2\n`;
-  `	.global	{emit_symbol fundecl.fun_name}\n`;
+  `	.globl	{emit_symbol fundecl.fun_name}\n`;
   `{emit_symbol fundecl.fun_name}:\n`;
   let n = frame_size() in
   ignore(emit_stack_adjustment "sub" n);
@@ -571,7 +571,7 @@ let fundecl fundecl =
 
 let emit_item = function
     Cglobal_symbol s ->
-      `	.global	{emit_symbol s}\n`;
+      `	.globl	{emit_symbol s}\n`;
   | Cdefine_symbol s ->
       `{emit_symbol s}:\n`
   | Cdefine_label lbl ->
@@ -611,25 +611,25 @@ let begin_assembly() =
   `alloc_limit  .req    r10\n`;
   let lbl_begin = Compilenv.make_symbol (Some "data_begin") in
   `	.data\n`;
-  `	.global	{emit_symbol lbl_begin}\n`;
+  `	.globl	{emit_symbol lbl_begin}\n`;
   `{emit_symbol lbl_begin}:\n`;
   let lbl_begin = Compilenv.make_symbol (Some "code_begin") in
   `	.text\n`;
-  `	.global	{emit_symbol lbl_begin}\n`;
+  `	.globl	{emit_symbol lbl_begin}\n`;
   `{emit_symbol lbl_begin}:\n`
 
 let end_assembly () =
   let lbl_end = Compilenv.make_symbol (Some "code_end") in
   `	.text\n`;
-  `	.global	{emit_symbol lbl_end}\n`;
+  `	.globl	{emit_symbol lbl_end}\n`;
   `{emit_symbol lbl_end}:\n`;
   let lbl_end = Compilenv.make_symbol (Some "data_end") in
   `	.data\n`;
-  `	.global	{emit_symbol lbl_end}\n`;
+  `	.globl	{emit_symbol lbl_end}\n`;
   `{emit_symbol lbl_end}:\n`;
   `	.word	0\n`;
   let lbl = Compilenv.make_symbol (Some "frametable") in
-  `	.global	{emit_symbol lbl}\n`;
+  `	.globl	{emit_symbol lbl}\n`;
   `{emit_symbol lbl}:\n`;
   emit_frames
     { efa_label = (fun lbl ->
@@ -642,4 +642,6 @@ let end_assembly () =
       efa_label_rel = (fun lbl ofs ->
                            `	.word	{emit_label lbl} - . + {emit_int32 ofs}\n`);
       efa_def_label = (fun lbl -> `{emit_label lbl}:\n`);
-      efa_string = (fun s -> emit_string_directive "	.asciz	" s) }
+      efa_string = (fun s -> emit_string_directive "	.asciz	" s) };
+  `	.type	{emit_symbol lbl}, %object\n`;
+  `	.size	{emit_symbol lbl}, .-{emit_symbol lbl}\n`
