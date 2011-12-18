@@ -919,6 +919,9 @@ let end_assembly () =
       efa_string = (fun s -> emit_string_directive "	.asciz	" s) };
   `	.type	{emit_symbol lbl}, %object\n`;
   `	.size	{emit_symbol lbl}, .-{emit_symbol lbl}\n`;
-  if Config.system = "linux" then
+  begin match Config.system with
+    "linux_eabihf" | "linux_eabi" ->
       (* Mark stack as non-executable *)
       `	.section	.note.GNU-stack,\"\",%progbits\n`
+  | _ -> ()
+  end
