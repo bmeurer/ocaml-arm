@@ -35,7 +35,7 @@ Tier 2 (maintained when possible, with help from users):
     MIPS               IRIX 6
     PowerPC            Linux, NetBSD
     SPARC              Solaris 9, Linux, NetBSD
-    Strong ARM         Linux
+    ARM                Linux
 
 Other operating systems for the processors above have not been tested,
 but the compiler may work under other operating systems with little work.
