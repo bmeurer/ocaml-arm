@@ -19,7 +19,13 @@ open Format
 
 (* Machine-specific command-line options *)
 
-let command_line_options = []
+let pic_code = ref false
+
+let command_line_options =
+  [ "-fPIC", Arg.Set pic_code,
+      " Generate position-independent machine code";
+    "-fno-PIC", Arg.Clear pic_code,
+      " Generate position-dependent machine code" ]
 
 (* Addressing modes *)
 
