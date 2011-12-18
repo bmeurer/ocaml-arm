@@ -28,14 +28,14 @@ caml_call_gc:
     /* Record return address and desired size */
     /* Can use alloc_limit as a temporary since it will be reloaded by
        invoke_gc */
-        ldr     alloc_limit, .Lcaml_last_return_address
+        ldr     alloc_limit, =caml_last_return_address
         str     lr, [alloc_limit, #0]
-        ldr     alloc_limit, .Lcaml_requested_size
+        ldr     alloc_limit, =caml_requested_size
         str     r12, [alloc_limit, #0]
     /* Branch to shared GC code */
         bl      .Linvoke_gc
     /* Finish allocation */
-        ldr     r12, .Lcaml_requested_size
+        ldr     r12, =caml_requested_size
         ldr     r12, [r12, #0]
         sub     alloc_ptr, alloc_ptr, r12
         bx      lr
@@ -48,7 +48,7 @@ caml_alloc1:
         cmp     alloc_ptr, alloc_limit
         movcs   pc, lr                /* Return if alloc_ptr >= alloc_limit */
     /* Record return address */
-        ldr     r12, .Lcaml_last_return_address
+        ldr     r12, =caml_last_return_address
         str     lr, [r12, #0]
     /* Invoke GC */
         bl      .Linvoke_gc
@@ -63,7 +63,7 @@ caml_alloc2:
         cmp     alloc_ptr, alloc_limit
         movcs   pc, lr                /* Return if alloc_ptr >= alloc_limit */
     /* Record return address */
-        ldr     r12, .Lcaml_last_return_address
+        ldr     r12, =caml_last_return_address
         str     lr, [r12, #0]
     /* Invoke GC */
         bl      .Linvoke_gc
@@ -78,7 +78,7 @@ caml_alloc3:
         cmp     alloc_ptr, alloc_limit
         movcs   pc, lr                /* Return if alloc_ptr >= alloc_limit */
     /* Record return address */
-        ldr     r12, .Lcaml_last_return_address
+        ldr     r12, =caml_last_return_address
         str     lr, [r12, #0]
     /* Invoke GC */
         bl      .Linvoke_gc
@@ -95,14 +95,14 @@ caml_allocN:
     /* Record return address and desired size */
     /* Can use alloc_limit as a temporary since it will be reloaded by
        invoke_gc */
-        ldr     alloc_limit, .Lcaml_last_return_address
+        ldr     alloc_limit, =caml_last_return_address
         str     lr, [alloc_limit, #0]
-        ldr     alloc_limit, .Lcaml_requested_size
+        ldr     alloc_limit, =caml_requested_size
         str     r12, [alloc_limit, #0]
     /* Invoke GC */
         bl      .Linvoke_gc
     /* Try again */
-        ldr     r12, .Lcaml_requested_size
+        ldr     r12, =caml_requested_size
         ldr     r12, [r12, #0]
         b       caml_allocN
         .type   caml_allocN, %function
@@ -111,30 +111,30 @@ caml_allocN:
 /* Shared code to invoke the GC */
 .Linvoke_gc:
     /* Record lowest stack address */
-        ldr     r12, .Lcaml_bottom_of_stack
+        ldr     r12, =caml_bottom_of_stack
         str     sp, [r12, #0]
     /* Save integer registers and return address on stack */
         stmfd   sp!, {r0,r1,r2,r3,r4,r5,r6,r7,r12,lr}
     /* Store pointer to saved integer registers in caml_gc_regs */
-        ldr     r12, .Lcaml_gc_regs
+        ldr     r12, =caml_gc_regs
         str     sp, [r12, #0]
     /* Save current allocation pointer for debugging purposes */
-        ldr     r12, .Lcaml_young_ptr
+        ldr     r12, =caml_young_ptr
         str     alloc_ptr, [r12, #0]
     /* Save trap pointer in case an exception is raised during GC */
-        ldr     r12, .Lcaml_exception_pointer
+        ldr     r12, =caml_exception_pointer
         str     trap_ptr, [r12, #0]
     /* Call the garbage collector */
         bl      caml_garbage_collection
     /* Restore the registers from the stack */
         ldmfd   sp!, {r0,r1,r2,r3,r4,r5,r6,r7,r12}
     /* Reload return address */
-        ldr     r12, .Lcaml_last_return_address
+        ldr     r12, =caml_last_return_address
         ldr     lr, [r12, #0]
     /* Reload new allocation pointer and allocation limit */
-        ldr     r12, .Lcaml_young_ptr
+        ldr     r12, =caml_young_ptr
         ldr     alloc_ptr, [r12, #0]
-        ldr     r12, .Lcaml_young_limit
+        ldr     r12, =caml_young_limit
         ldr     alloc_limit, [r12, #0]
     /* Return to caller */
         ldr     r12, [sp], #4
@@ -148,20 +148,20 @@ caml_c_call:
     /* Preserve return address in callee-save register r4 */
         mov     r4, lr
     /* Record lowest stack address and return address */
-        ldr     r5, .Lcaml_last_return_address
-        ldr     r6, .Lcaml_bottom_of_stack
+        ldr     r5, =caml_last_return_address
+        ldr     r6, =caml_bottom_of_stack
         str     lr, [r5, #0]
         str     sp, [r6, #0]
     /* Make the exception handler and alloc ptr available to the C code */
-        ldr     r6, .Lcaml_young_ptr
-        ldr     r7, .Lcaml_exception_pointer
+        ldr     r6, =caml_young_ptr
+        ldr     r7, =caml_exception_pointer
         str     alloc_ptr, [r6, #0]
         str     trap_ptr, [r7, #0]
     /* Call the function */
         mov     lr, pc
         bx      r12
     /* Reload alloc ptr and alloc limit */
-        ldr     r5, .Lcaml_young_limit
+        ldr     r5, =caml_young_limit
         ldr     alloc_ptr, [r6, #0]    /* r6 still points to caml_young_ptr */
         ldr     alloc_limit, [r5, #0]
     /* Return */
@@ -173,7 +173,7 @@ caml_c_call:
 
         .globl caml_start_program
 caml_start_program:
-        ldr     r12, .Lcaml_program
+        ldr     r12, =caml_program
 
 /* Code shared with caml_callback* */
 /* Address of Caml code to call is in r12 */
@@ -184,51 +184,51 @@ caml_start_program:
         stmfd   sp!, {r4,r5,r6,r7,r8,r10,r11,lr} /* 8-alignment */
     /* Setup a callback link on the stack */
         sub     sp, sp, #4*4                    /* 8-alignment */
-        ldr     r4, .Lcaml_bottom_of_stack
+        ldr     r4, =caml_bottom_of_stack
         ldr     r4, [r4, #0]
         str     r4, [sp, #0]
-        ldr     r4, .Lcaml_last_return_address
+        ldr     r4, =caml_last_return_address
         ldr     r4, [r4, #0]
         str     r4, [sp, #4]
-        ldr     r4, .Lcaml_gc_regs
+        ldr     r4, =caml_gc_regs
         ldr     r4, [r4, #0]
         str     r4, [sp, #8]
     /* Setup a trap frame to catch exceptions escaping the Caml code */
         sub     sp, sp, #4*2
-        ldr     r4, .Lcaml_exception_pointer
+        ldr     r4, =caml_exception_pointer
         ldr     r4, [r4, #0]
         str     r4, [sp, #0]
-        ldr     r4, .LLtrap_handler
+        ldr     r4, =.Ltrap_handler
         str     r4, [sp, #4]
         mov     trap_ptr, sp
     /* Reload allocation pointers */
-        ldr     r4, .Lcaml_young_ptr
+        ldr     r4, =caml_young_ptr
         ldr     alloc_ptr, [r4, #0]
-        ldr     r4, .Lcaml_young_limit
+        ldr     r4, =caml_young_limit
         ldr     alloc_limit, [r4, #0]
     /* Call the Caml code */
         mov     lr, pc
         bx      r12
 .Lcaml_retaddr:
     /* Pop the trap frame, restoring caml_exception_pointer */
-        ldr     r4, .Lcaml_exception_pointer
+        ldr     r4, =caml_exception_pointer
         ldr     r5, [sp, #0]
         str     r5, [r4, #0]
         add     sp, sp, #2 * 4
     /* Pop the callback link, restoring the global variables */
 .Lreturn_result:
-        ldr     r4, .Lcaml_bottom_of_stack
+        ldr     r4, =caml_bottom_of_stack
         ldr     r5, [sp, #0]
         str     r5, [r4, #0]
-        ldr     r4, .Lcaml_last_return_address
+        ldr     r4, =caml_last_return_address
         ldr     r5, [sp, #4]
         str     r5, [r4, #0]
-        ldr     r4, .Lcaml_gc_regs
+        ldr     r4, =caml_gc_regs
         ldr     r5, [sp, #8]
         str     r5, [r4, #0]
         add     sp, sp, #4*4
     /* Update allocation pointer */
-        ldr     r4, .Lcaml_young_ptr
+        ldr     r4, =caml_young_ptr
         str     alloc_ptr, [r4, #0]
     /* Reload callee-save registers and return */
         ldmfd   sp!, {r4,r5,r6,r7,r8,r10,r11,lr}
@@ -239,7 +239,7 @@ caml_start_program:
     /* The trap handler */
 .Ltrap_handler:
     /* Save exception pointer */
-        ldr     r4, .Lcaml_exception_pointer
+        ldr     r4, =caml_exception_pointer
         str     trap_ptr, [r4, #0]
     /* Encode exception bucket as an exception result */
         orr     r0, r0, #2
@@ -251,12 +251,12 @@ caml_start_program:
         .globl caml_raise_exception
 caml_raise_exception:
     /* Reload Caml allocation pointers */
-        ldr     r12, .Lcaml_young_ptr
+        ldr     r12, =caml_young_ptr
         ldr     alloc_ptr, [r12, #0]
-        ldr     r12, .Lcaml_young_limit
+        ldr     r12, =caml_young_limit
         ldr     alloc_limit, [r12, #0]
     /* Cut stack at current trap handler */
-        ldr     r12, .Lcaml_exception_pointer
+        ldr     r12, =caml_exception_pointer
         ldr     sp, [r12, #0]
     /* Pop previous handler and addr of trap, and jump to it */
         ldmfd   sp!, {trap_ptr, pc}
@@ -283,7 +283,7 @@ caml_callback2_exn:
         mov     r0, r1           /* r0 = first arg */
         mov     r1, r2           /* r1 = second arg */
         mov     r2, r12          /* r2 = closure environment */
-        ldr     r12, .Lcaml_apply2
+        ldr     r12, =caml_apply2
         b       .Ljump_to_caml
         .type   caml_callback2_exn, %function
         .size   caml_callback2_exn, .-caml_callback2_exn
@@ -297,7 +297,7 @@ caml_callback3_exn:
         mov     r1, r2          /* r1 = second arg */
         mov     r2, r3          /* r2 = third arg */
         mov     r3, r12         /* r3 = closure environment */
-        ldr     r12, .Lcaml_apply3
+        ldr     r12, =caml_apply3
         b       .Ljump_to_caml
         .type   caml_callback3_exn, %function
         .size   caml_callback3_exn, .-caml_callback3_exn
@@ -305,26 +305,11 @@ caml_callback3_exn:
         .globl caml_ml_array_bound_error
 caml_ml_array_bound_error:
     /* Load address of [caml_array_bound_error] in r12 */
-        ldr     r12, .Lcaml_array_bound_error
+        ldr     r12, =caml_array_bound_error
     /* Call that function */
         b       caml_c_call
         .type   caml_ml_array_bound_error, %function
         .size   caml_ml_array_bound_error, .-caml_ml_array_bound_error
-
-/* Global references */
-
-.Lcaml_last_return_address:     .word caml_last_return_address
-.Lcaml_bottom_of_stack:         .word caml_bottom_of_stack
-.Lcaml_gc_regs:                 .word caml_gc_regs
-.Lcaml_young_ptr:               .word caml_young_ptr
-.Lcaml_young_limit:             .word caml_young_limit
-.Lcaml_exception_pointer:       .word caml_exception_pointer
-.Lcaml_program:                 .word caml_program
-.LLtrap_handler:                .word .Ltrap_handler
-.Lcaml_apply2:                  .word caml_apply2
-.Lcaml_apply3:                  .word caml_apply3
-.Lcaml_array_bound_error:       .word caml_array_bound_error
-.Lcaml_requested_size:          .word caml_requested_size
 
         .data
 caml_requested_size:
