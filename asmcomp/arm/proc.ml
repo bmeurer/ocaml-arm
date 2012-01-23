@@ -175,7 +175,7 @@ let destroyed_at_alloc =            (* r0-r7, d0-d15 preserved *)
                     116;116;118;119;120;121;122;123;
                     124;125;126;127;128;129;130;131])
 
-let destroyed_at_extcall_noalloc =
+let destroyed_at_c_call =
   Array.of_list (List.map
                    phys_reg
                    (match abi with
@@ -191,18 +191,12 @@ let destroyed_at_extcall_noalloc =
                          116;116;118;119;120;121;122;123;
                          124;125;126;127;128;129;130;131]))
 
-let destroyed_at_extcall =          (* also destroys r4-r7 *)
-  Array.append
-    destroyed_at_extcall_noalloc
-    (Array.of_list(List.map phys_reg [4;5;6;7]))
-
 let destroyed_at_oper = function
-    Iop(Icall_ind | Icall_imm _ ) ->
-      all_phys_regs
+    Iop(Icall_ind | Icall_imm _ )
   | Iop(Iextcall(_, true)) ->
-      destroyed_at_extcall
+      all_phys_regs
   | Iop(Iextcall(_, false)) ->
-      destroyed_at_extcall_noalloc
+      destroyed_at_c_call
   | Iop(Ialloc n) ->
       destroyed_at_alloc
   | Iop(Iconst_symbol _) when !pic_code ->
