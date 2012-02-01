@@ -524,19 +524,7 @@ let emit_instr i =
         `	{emit_string instr}	{emit_reg r}, {emit_addressing addr i.arg 1}\n`; 1
     | Lop(Ialloc n) ->
         let lbl_frame = record_frame_label i.live i.dbg in
-        if not !fastcode_flag && (n = 8 || n = 12 || n = 16) then begin
-          let s = "caml_alloc" ^ (string_of_int ((n - 4) / 4)) in
-          `	{emit_call s}\n`;
-          `{emit_label lbl_frame}:	add	{emit_reg i.res.(0)}, alloc_ptr, #4\n`;
-          2
-        end else if not !fastcode_flag
-                  && Reg.Set.for_all (fun r -> r.loc <> Reg 7) i.live then begin
-          (* r7 is not live so we can use it *)
-          let ninstr = emit_intconst (phys_reg 7) (Int32.of_int n) in
-          `	{emit_call "caml_allocN"}\n`;
-          `{emit_label lbl_frame}:	add	{emit_reg i.res.(0)}, alloc_ptr, #4\n`;
-          2 + ninstr
-        end else begin
+        if !fastcode_flag then begin
           let lbl_redo = new_label() in
           `{emit_label lbl_redo}:`;
           let ninstr = decompose_intconst
@@ -552,6 +540,17 @@ let emit_instr i =
               gc_return_lbl = lbl_redo;
               gc_frame_lbl = lbl_frame } :: !call_gc_sites;
           3 + ninstr
+        end else begin
+          let ninstr =
+            begin match n with
+               8 -> `	{emit_call "caml_alloc1"}\n`; 1
+            | 12 -> `	{emit_call "caml_alloc2"}\n`; 1
+            | 16 -> `	{emit_call "caml_alloc3"}\n`; 1
+            |  _ -> let ninstr = emit_intconst (phys_reg 7) (Int32.of_int n) in
+                    `	{emit_call "caml_allocN"}\n`; 1 + ninstr
+            end in
+          `{emit_label lbl_frame}:	add	{emit_reg i.res.(0)}, alloc_ptr, #4\n`;
+          1 + ninstr
         end
     | Lop(Iintop(Ilsl | Ilsr | Iasr as op)) ->
         let shift = name_for_shift_operation op in

@@ -168,10 +168,10 @@ let loc_exn_bucket = phys_reg 0
 
 (* Registers destroyed by operations *)
 
-let destroyed_at_alloc =            (* r0-r7, d0-d15 preserved *)
+let destroyed_at_alloc =            (* r0-r6, d0-d15 preserved *)
   Array.of_list (List.map
                    phys_reg
-                   [8;
+                   [7;8;
                     116;116;118;119;120;121;122;123;
                     124;125;126;127;128;129;130;131])
 

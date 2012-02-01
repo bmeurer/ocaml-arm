@@ -108,13 +108,12 @@ caml_alloc1:
         bcc     1f
         bx      lr
 1:  /* Record return address */
-        ldr     r12, =caml_last_return_address
-        str     lr, [r12]
-    /* Call GC */
+        ldr     r7, =caml_last_return_address
+        str     lr, [r7]
+    /* Call GC (preserves r7) */
         bl      .Lcaml_call_gc
     /* Restore return address */
-        ldr     r12, =caml_last_return_address
-        ldr     lr, [r12]
+        ldr     lr, [r7]
     /* Try again */
         b       .Lcaml_alloc1
         .type   caml_alloc1, %function
@@ -130,13 +129,12 @@ caml_alloc2:
         bcc     1f
         bx      lr
 1:  /* Record return address */
-        ldr     r12, =caml_last_return_address
-        str     lr, [r12]
-    /* Call GC */
+        ldr     r7, =caml_last_return_address
+        str     lr, [r7]
+    /* Call GC (preserves r7) */
         bl      .Lcaml_call_gc
     /* Restore return address */
-        ldr     r12, =caml_last_return_address
-        ldr     lr, [r12]
+        ldr     lr, [r7]
     /* Try again */
         b       .Lcaml_alloc2
         .type   caml_alloc2, %function
@@ -152,13 +150,12 @@ caml_alloc3:
         bcc     1f
         bx      lr
 1:  /* Record return address */
-        ldr     r12, =caml_last_return_address
-        str     lr, [r12]
-    /* Call GC */
+        ldr     r7, =caml_last_return_address
+        str     lr, [r7]
+    /* Call GC (preserves r7) */
         bl      .Lcaml_call_gc
     /* Restore return address */
-        ldr     r12, =caml_last_return_address
-        ldr     lr, [r12]
+        ldr     lr, [r7]
     /* Try again */
         b       .Lcaml_alloc3
         .type   caml_alloc3, %function
@@ -176,7 +173,7 @@ caml_allocN:
 1:  /* Record return address */
         ldr     r12, =caml_last_return_address
         str     lr, [r12]
-    /* Call GC */
+    /* Call GC (preserves r7) */
         bl      .Lcaml_call_gc
     /* Restore return address */
         ldr     r12, =caml_last_return_address
