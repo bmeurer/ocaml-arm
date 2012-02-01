@@ -102,7 +102,7 @@ caml_call_gc:
         .globl  caml_alloc1
 caml_alloc1:
         PROFILE
-        subs    alloc_ptr, alloc_ptr, 8
+        sub     alloc_ptr, alloc_ptr, 8
         cmp     alloc_ptr, alloc_limit
         bcc     1f
         bx      lr
