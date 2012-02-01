@@ -102,6 +102,7 @@ caml_call_gc:
         .globl  caml_alloc1
 caml_alloc1:
         PROFILE
+.Lcaml_alloc1:
         sub     alloc_ptr, alloc_ptr, 8
         cmp     alloc_ptr, alloc_limit
         bcc     1f
@@ -115,7 +116,7 @@ caml_alloc1:
         ldr     r12, =caml_last_return_address
         ldr     lr, [r12]
     /* Try again */
-        b       caml_alloc1
+        b       .Lcaml_alloc1
         .type   caml_alloc1, %function
         .size   caml_alloc1, .-caml_alloc1
 
@@ -123,6 +124,7 @@ caml_alloc1:
         .globl  caml_alloc2
 caml_alloc2:
         PROFILE
+.Lcaml_alloc2:
         sub     alloc_ptr, alloc_ptr, 12
         cmp     alloc_ptr, alloc_limit
         bcc     1f
@@ -136,7 +138,7 @@ caml_alloc2:
         ldr     r12, =caml_last_return_address
         ldr     lr, [r12]
     /* Try again */
-        b       caml_alloc2
+        b       .Lcaml_alloc2
         .type   caml_alloc2, %function
         .size   caml_alloc2, .-caml_alloc2
 
@@ -144,6 +146,7 @@ caml_alloc2:
         .globl  caml_alloc3
 caml_alloc3:
         PROFILE
+.Lcaml_alloc3:
         sub     alloc_ptr, alloc_ptr, 16
         cmp     alloc_ptr, alloc_limit
         bcc     1f
@@ -157,7 +160,7 @@ caml_alloc3:
         ldr     r12, =caml_last_return_address
         ldr     lr, [r12]
     /* Try again */
-        b       caml_alloc3
+        b       .Lcaml_alloc3
         .type   caml_alloc3, %function
         .size   caml_alloc3, .-caml_alloc3
 
@@ -165,6 +168,7 @@ caml_alloc3:
         .globl  caml_allocN
 caml_allocN:
         PROFILE
+.Lcaml_allocN:
         sub     alloc_ptr, alloc_ptr, r7
         cmp     alloc_ptr, alloc_limit
         bcc     1f
@@ -178,7 +182,7 @@ caml_allocN:
         ldr     r12, =caml_last_return_address
         ldr     lr, [r12]
     /* Try again */
-        b       caml_allocN
+        b       .Lcaml_allocN
         .type   caml_allocN, %function
         .size   caml_allocN, .-caml_allocN
 
