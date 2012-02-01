@@ -4,7 +4,7 @@
 /*                                                                     */
 /*                  Benedikt Meurer, University of Siegen              */
 /*                                                                     */
-/*    Copyright 2011 Lehrstuhl für Compilerbau und Softwareanalyse,    */
+/*    Copyright 2012 Lehrstuhl für Compilerbau und Softwareanalyse,    */
 /*    Universität Siegen. All rights reserved. This file is distri-    */
 /*    buted under the terms of the GNU Library General Public Licen-   */
 /*    se, with the special exception on linking described in file      */
