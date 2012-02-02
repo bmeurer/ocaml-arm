@@ -177,10 +177,10 @@ method! select_operation op args =
       (* see below for fix up of return register *)
       (Iextcall("__aeabi_idivmod", false), args)
   (* Select best possible addressing for load/store *)
-  | (Cload chunk, [arg]) ->
+  | (Cload chunk, [arg]) when chunk <> Single ->
       let (addr, eloc) = select_addressing chunk arg in
       (Iload(chunk, addr), [eloc])
-  | (Cstore chunk, [arg1; arg2]) ->
+  | (Cstore chunk, [arg1; arg2]) when chunk <> Single ->
       let (addr, eloc) = select_addressing chunk arg1 in
       (Istore(chunk, addr), [arg2; eloc])
   (* Turn floating-point operations into runtime ABI calls for softfp *)
