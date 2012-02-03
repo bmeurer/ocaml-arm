@@ -189,11 +189,6 @@ let name_for_shift_operation = function
   | Iasr -> "asr"
   | _ -> assert false
 
-let name_for_shift_int_operation = function
-    Ishiftadd -> "add"
-  | Ishiftsub -> "sub"
-  | Ishiftsubrev -> "rsb"
-
 (* General functional to decompose a non-immediate integer constant
    into 8-bit chunks shifted left 0 ... 30 bits. *)
 
@@ -653,7 +648,10 @@ let emit_instr i =
         `	fsqrtd	{emit_reg i.res.(0)}, {emit_reg i.arg.(0)}\n`;
         1
     | Lop(Ispecific(Ishiftarith(op, shift))) ->
-        let instr = name_for_shift_int_operation op in
+        let instr = (match op with
+                       Ishiftadd    -> "add"
+                     | Ishiftsub    -> "sub"
+                     | Ishiftsubrev -> "rsb") in
         `	{emit_string instr}     {emit_reg i.res.(0)}, {emit_reg i.arg.(0)}, {emit_reg i.arg.(1)}`;
         if shift >= 0
         then `, lsl #{emit_int shift}\n`
