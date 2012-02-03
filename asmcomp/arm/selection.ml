@@ -175,7 +175,7 @@ method! select_operation op args =
     when n = 1 lsl Misc.log2 n ->
       (Iintop_imm(Imod, n), [arg])
   | (Cmodi, args) ->
-      (* see below for fix up of return register *)
+      (* See above for fix up of return register *)
       (Iextcall("__aeabi_idivmod", false), args)
   (* Turn floating-point operations into runtime ABI calls for softfp *)
   | (op, args) when !fpu = Soft -> self#select_operation_softfp op args
