@@ -48,6 +48,8 @@ let is_intconst = function
 
 exception Use_default
 
+let r1 = phys_reg 1
+
 let pseudoregs_for_operation op arg res =
   match op with
   (* For mul rd,rm,rs and mla rd,rm,rs,ra (pre-ARMv6) the registers rm
@@ -63,6 +65,10 @@ let pseudoregs_for_operation op arg res =
       let arg' = Array.copy arg in
       arg'.(0) <- res.(0);
       (arg', res)
+  (* We use __aeabi_idivmod for Cmodi only, and hence we care only
+     for the remainder in r1, so fix up the destination register. *)
+  | Iextcall("__aeabi_idivmod", false) ->
+      (arg, [|r1|])
   (* Other instructions are regular *)
   | _ -> raise Use_default
 
@@ -246,16 +252,6 @@ method! select_condition = function
       super#select_condition expr
 
 (* Deal with some register constraints *)
-
-method! insert_debug desc dbg rs rd =
-  begin match desc with
-  (* We use __aeabi_idivmod for Cmodi only, and hence we care only
-     for the remainder in r1, so fix up the destination register. *)
-    Iop(Iextcall("__aeabi_idivmod", false)) ->
-      rd.(0) <- phys_reg 1
-  | _ -> ()
-  end;
-  super#insert_debug desc dbg rs rd
 
 method! insert_op_debug op dbg rs rd =
   try
