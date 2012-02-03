@@ -59,7 +59,7 @@ let pseudoregs_for_operation op arg res =
   | Iabsf | Inegf when !fpu = Soft ->
       ([|res.(0); arg.(1)|], res)
   (* VFPv3 Imuladdf...Inmscf: arg.(0) and res.(0) must be the same *)
-  | Ispecific(Imuladdf | Inegmuladdf | Imscf | Inmscf) ->
+  | Ispecific(Imuladdf | Inegmuladdf | Imulsubf | Inmscf) ->
       let arg' = Array.copy arg in
       arg'.(0) <- res.(0);
       (arg', res)
@@ -225,9 +225,9 @@ method private select_operation_vfpv3 op args =
   (* Recognize floating-point negate, multiply and add *)
   | (Csubf, [arg; Cop(Cmulf, args)]) ->
       (Ispecific Inegmuladdf, arg :: args)
-  (* Recognize multiply-subtract *)
+  (* Recognize multiply and subtract *)
   | (Csubf, [Cop(Cmulf, args); arg]) ->
-      (Ispecific Imscf, arg :: args)
+      (Ispecific Imulsubf, arg :: args)
   (* Recognize floating-point square root *)
   | (Cextcall("sqrt", _, false, _), args) ->
       (Ispecific Isqrtf, args)

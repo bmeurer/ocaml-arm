@@ -114,7 +114,7 @@ type specific_operation =
   | Inegmulf    (* floating-point negate and multiply *)
   | Imuladdf    (* floating-point multiply and add *)
   | Inegmuladdf (* floating-point negate, multiply and add *)
-  | Imscf   (* floating-point multiply-subtract *)
+  | Imulsubf    (* floating-point multiply and subtract *)
   | Inmscf  (* floating-point negate-multiply-subtract *)
   | Isqrtf  (* floating-point square root *)
 
@@ -188,7 +188,7 @@ let print_specific_operation printreg op ppf arg =
         printreg arg.(0)
         printreg arg.(1)
         printreg arg.(2)
-  | Imscf ->
+  | Imulsubf ->
       fprintf ppf "(-f %a) +f (%a *f %a)"
         printreg arg.(0)
         printreg arg.(1)
