@@ -26,7 +26,7 @@ Native-code compiler:
 * New ARM backend (PR#5433):
     . Supports both Linux/EABI (armel) and Linux/EABI+VFPv3 (armhf).
     . Added support for the Thumb-2 instruction set with average code size
-      savings of 27%.
+      savings of 28%.
     . Added support for position-independent code, natdynlink, profiling and
       exception backtraces.
 
