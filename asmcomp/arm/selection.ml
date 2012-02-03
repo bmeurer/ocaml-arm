@@ -213,7 +213,7 @@ method private select_operation_vfpv3 op args =
   match (op, args) with
   (* Recognize floating-point negate-multiply *)
     (Cnegf, [Cop(Cmulf, args)]) ->
-      (Ispecific Inmulf, args)
+      (Ispecific Inegmulf, args)
   (* Recognize floating-point multiply-accumulate *)
   | (Caddf, [arg; Cop(Cmulf, args)])
   | (Caddf, [Cop(Cmulf, args); arg]) ->

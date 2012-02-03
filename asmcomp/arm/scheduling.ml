@@ -39,7 +39,7 @@ method oper_latency = function
   | Isubf
   | Idivf
   | Imulf
-  | Ispecific(Inmulf | Imacf | Inmacf | Imscf | Inmscf | Isqrtf)
+  | Ispecific(Inegmulf | Imacf | Inmacf | Imscf | Inmscf | Isqrtf)
   | Inegf | Iabsf when !fpu >= VFPv3_D16 -> 2
   (* Everything else *)
   | _ -> 1
@@ -66,7 +66,7 @@ method oper_issue_cycles = function
   | Iaddf
   | Isubf -> 7
   | Imulf
-  | Ispecific Inmulf -> 9
+  | Ispecific Inegmulf -> 9
   | Ispecific(Imacf | Inmacf | Imscf | Inmscf) -> 17
   | Idivf
   | Ispecific Isqrtf -> 27
