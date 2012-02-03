@@ -33,7 +33,7 @@ method oper_latency = function
   | Iintoffloat -> 2
   (* Multiplys have a latency of two cycles *)
   | Iintop Imul
-  | Ispecific(Imuladd | Imls) -> 2
+  | Ispecific(Imuladd | Imulsub) -> 2
   (* VFP instructions *)
   | Iaddf
   | Isubf
@@ -61,7 +61,7 @@ method oper_issue_cycles = function
   | Iintop_imm(Idiv, _) -> 4
   | Iintop_imm(Imod, _) -> 6
   | Iintop Imul
-  | Ispecific(Imuladd | Imls) -> 2
+  | Ispecific(Imuladd | Imulsub) -> 2
   (* VFP instructions *)
   | Iaddf
   | Isubf -> 7

@@ -131,7 +131,7 @@ method select_shift_arith op shiftop shiftrevop args =
         when !arch > ARMv6 ->
           begin match self#select_operation Cmuli args with
             (Iintop Imul, [arg1; arg2]) ->
-              (Ispecific Imls, [arg1; arg2; arg3])
+              (Ispecific Imulsub, [arg1; arg2; arg3])
           | _ -> op_args
           end
       | op_args -> op_args

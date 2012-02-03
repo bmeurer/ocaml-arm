@@ -652,17 +652,19 @@ let emit_instr i =
                        Ishiftadd    -> "add"
                      | Ishiftsub    -> "sub"
                      | Ishiftsubrev -> "rsb") in
-        `	{emit_string instr}     {emit_reg i.res.(0)}, {emit_reg i.arg.(0)}, {emit_reg i.arg.(1)}`;
+        `	{emit_string instr}	{emit_reg i.res.(0)}, {emit_reg i.arg.(0)}, {emit_reg i.arg.(1)}`;
         if shift >= 0
         then `, lsl #{emit_int shift}\n`
         else `, asr #{emit_int (-shift)}\n`;
         1
     | Lop(Ispecific(Irevsubimm n)) ->
         `	rsb	{emit_reg i.res.(0)}, {emit_reg i.arg.(0)}, #{emit_int n}\n`; 1
-    | Lop(Ispecific Imuladd) ->
-        `	mla	{emit_reg i.res.(0)}, {emit_reg i.arg.(0)}, {emit_reg i.arg.(1)}, {emit_reg i.arg.(2)}\n`; 1
-    | Lop(Ispecific Imls) ->
-        `	mls	{emit_reg i.res.(0)}, {emit_reg i.arg.(0)}, {emit_reg i.arg.(1)}, {emit_reg i.arg.(2)}\n`; 1
+    | Lop(Ispecific(Imuladd | Imulsub as op)) ->
+        let instr = (match op with
+                       Imuladd -> "mla"
+                     | Imulsub -> "mls"
+                     | _ -> assert false) in
+        `	{emit_string instr}	{emit_reg i.res.(0)}, {emit_reg i.arg.(0)}, {emit_reg i.arg.(1)}, {emit_reg i.arg.(2)}\n`; 1
     | Lreloadretaddr ->
         let n = frame_size() in
         `	ldr	lr, [sp, #{emit_int(n-4)}]\n`; 1

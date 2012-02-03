@@ -110,7 +110,7 @@ type specific_operation =
   | Ishiftcheckbound of int
   | Irevsubimm of int
   | Imuladd                               (* multiply and add *)
-  | Imls    (* multiply-subtract *)
+  | Imulsub                               (* multiply and subtract *)
   | Inmulf  (* floating-point negate-multiply *)
   | Imacf   (* floating-point multiply-accumulate *)
   | Inmacf  (* floating-point negate-multiply-accumulate *)
@@ -169,7 +169,7 @@ let print_specific_operation printreg op ppf arg =
         printreg arg.(0)
         printreg arg.(1)
         printreg arg.(2)
-  | Imls ->
+  | Imulsub ->
       fprintf ppf "-(%a * %a) + %a"
         printreg arg.(0)
         printreg arg.(1)
