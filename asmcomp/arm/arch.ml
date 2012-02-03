@@ -109,7 +109,7 @@ type specific_operation =
     Ishiftarith of arith_operation * int
   | Ishiftcheckbound of int
   | Irevsubimm of int
-  | Imla    (* multiply-accumulate *)
+  | Imuladd                               (* multiply and add *)
   | Imls    (* multiply-subtract *)
   | Inmulf  (* floating-point negate-multiply *)
   | Imacf   (* floating-point multiply-accumulate *)
@@ -164,7 +164,7 @@ let print_specific_operation printreg op ppf arg =
       fprintf ppf "check %a >> %i > %a" printreg arg.(0) n printreg arg.(1)
   | Irevsubimm n ->
       fprintf ppf "%i %s %a" n "-" printreg arg.(0)
-  | Imla ->
+  | Imuladd ->
       fprintf ppf "(%a * %a) + %a"
         printreg arg.(0)
         printreg arg.(1)

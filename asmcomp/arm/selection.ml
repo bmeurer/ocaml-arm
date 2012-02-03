@@ -53,7 +53,7 @@ let pseudoregs_for_operation op arg res =
   (* For mul rd,rm,rs and mla rd,rm,rs,ra (pre-ARMv6) the registers rm
      and rd must be different. We deal with this by pretending that rm
      is also a result of the mul / mla operation. *)
-    Iintop Imul | Ispecific Imla when !arch < ARMv6 ->
+    Iintop Imul | Ispecific Imuladd when !arch < ARMv6 ->
       (arg, [| res.(0); arg.(0) |])
   (* Soft-float Iabsf and Inegf: arg.(0) and res.(0) must be the same *)
   | Iabsf | Inegf when !fpu = Soft ->
@@ -123,7 +123,7 @@ method select_shift_arith op shiftop shiftrevop args =
       | (Iintop Iadd, [arg3; Cop(Cmuli, args)]) as op_args ->
           begin match self#select_operation Cmuli args with
             (Iintop Imul, [arg1; arg2]) ->
-              (Ispecific Imla, [arg1; arg2; arg3])
+              (Ispecific Imuladd, [arg1; arg2; arg3])
           | _ -> op_args
           end
       (* Recognize multiply-subtract *)
