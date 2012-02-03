@@ -58,8 +58,8 @@ let pseudoregs_for_operation op arg res =
   (* Soft-float Iabsf and Inegf: arg.(0) and res.(0) must be the same *)
   | Iabsf | Inegf when !fpu = Soft ->
       ([|res.(0); arg.(1)|], res)
-  (* VFPv3 Imacf...Inmscf: arg.(0) and res.(0) must be the same *)
-  | Ispecific(Imacf | Inmacf | Imscf | Inmscf) ->
+  (* VFPv3 Imuladdf...Inmscf: arg.(0) and res.(0) must be the same *)
+  | Ispecific(Imuladdf | Inmacf | Imscf | Inmscf) ->
       let arg' = Array.copy arg in
       arg'.(0) <- res.(0);
       (arg', res)
@@ -118,7 +118,7 @@ method select_shift_arith op shiftop shiftrevop args =
       (Ispecific(Ishiftarith(shiftrevop, -n)), [arg2; arg1])
   | args ->
       begin match super#select_operation op args with
-      (* Recognize multiply-accumulate *)
+      (* Recognize multiply and add *)
         (Iintop Iadd, [Cop(Cmuli, args); arg3])
       | (Iintop Iadd, [arg3; Cop(Cmuli, args)]) as op_args ->
           begin match self#select_operation Cmuli args with
@@ -126,7 +126,7 @@ method select_shift_arith op shiftop shiftrevop args =
               (Ispecific Imuladd, [arg1; arg2; arg3])
           | _ -> op_args
           end
-      (* Recognize multiply-subtract *)
+      (* Recognize multiply and subtract *)
       | (Iintop Isub, [arg3; Cop(Cmuli, args)]) as op_args
         when !arch > ARMv6 ->
           begin match self#select_operation Cmuli args with
@@ -211,13 +211,13 @@ method private select_operation_softfp op args =
 
 method private select_operation_vfpv3 op args =
   match (op, args) with
-  (* Recognize floating-point negate-multiply *)
+  (* Recognize floating-point negate and multiply *)
     (Cnegf, [Cop(Cmulf, args)]) ->
       (Ispecific Inegmulf, args)
-  (* Recognize floating-point multiply-accumulate *)
+  (* Recognize floating-point multiply and add *)
   | (Caddf, [arg; Cop(Cmulf, args)])
   | (Caddf, [Cop(Cmulf, args); arg]) ->
-      (Ispecific Imacf, arg :: args)
+      (Ispecific Imuladdf, arg :: args)
   (* Recognize negate-multiply-subtract *)
   | (Csubf, [Cop(Cnegf, [arg]); Cop(Cmulf, args)])
   | (Csubf, [Cop(Cnegf, [Cop(Cmulf, args)]); arg]) ->
