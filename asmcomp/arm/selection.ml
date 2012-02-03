@@ -44,16 +44,6 @@ let is_intconst = function
     Cconst_int _ -> true
   | _ -> false
 
-let select_addressing chunk = function
-    Cop(Cadda, [arg; Cconst_int n])
-    when is_offset chunk n ->
-      (Iindexed n, arg)
-  | Cop(Cadda, [arg1; Cop(Caddi, [arg2; Cconst_int n])])
-    when is_offset chunk n ->
-      (Iindexed n, Cop(Cadda, [arg1; arg2]))
-  | arg ->
-      (Iindexed 0, arg)
-
 (* Special constraints on operand and result registers *)
 
 exception Use_default
@@ -102,10 +92,15 @@ method! is_simple_expr = function
       List.for_all self#is_simple_expr args
   | e -> super#is_simple_expr e
 
-method select_addressing arg =
-  (* We don't know the chunk size, so assume halfword addressing
-     which has the worst constraints for immediate offsets (safe) *)
-  select_addressing Sixteen_unsigned arg
+method select_addressing chunk = function
+  | Cop(Cadda, [arg; Cconst_int n])
+    when is_offset chunk n ->
+      (Iindexed n, arg)
+  | Cop(Cadda, [arg1; Cop(Caddi, [arg2; Cconst_int n])])
+    when is_offset chunk n ->
+      (Iindexed n, Cop(Cadda, [arg1; arg2]))
+  | arg ->
+      (Iindexed 0, arg)
 
 method select_shift_arith op shiftop shiftrevop args =
   match args with
@@ -176,13 +171,6 @@ method! select_operation op args =
   | (Cmodi, args) ->
       (* see below for fix up of return register *)
       (Iextcall("__aeabi_idivmod", false), args)
-  (* Select best possible addressing for load/store *)
-  | (Cload chunk, [arg]) when chunk <> Single ->
-      let (addr, eloc) = select_addressing chunk arg in
-      (Iload(chunk, addr), [eloc])
-  | (Cstore chunk, [arg1; arg2]) when chunk <> Single ->
-      let (addr, eloc) = select_addressing chunk arg1 in
-      (Istore(chunk, addr), [arg2; eloc])
   (* Turn floating-point operations into runtime ABI calls for softfp *)
   | (op, args) when !fpu = Soft -> self#select_operation_softfp op args
   (* Select operations for VFPv3 *)
