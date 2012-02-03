@@ -635,12 +635,12 @@ let emit_instr i =
                      | _ -> assert false) in
         `	{emit_string instr}	{emit_reg i.res.(0)}, {emit_reg i.arg.(0)}, {emit_reg i.arg.(1)}\n`;
         1
-    | Lop(Ispecific(Imuladdf | Inmacf | Imscf | Inmscf as op)) ->
+    | Lop(Ispecific(Imuladdf | Inegmuladdf | Imscf | Inmscf as op)) ->
         let instr = (match op with
-                       Imuladdf -> "fmacd"
-                     | Inmacf   -> "fnmacd"
-                     | Imscf    -> "fmscd"
-                     | Inmscf   -> "fnmscd"
+                       Imuladdf    -> "fmacd"
+                     | Inegmuladdf -> "fnmacd"
+                     | Imscf       -> "fmscd"
+                     | Inmscf      -> "fnmscd"
                      | _ -> assert false) in
         `	{emit_string instr}	{emit_reg i.res.(0)}, {emit_reg i.arg.(1)}, {emit_reg i.arg.(2)}\n`;
         1
