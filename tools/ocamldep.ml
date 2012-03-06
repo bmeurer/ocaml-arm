@@ -215,11 +215,10 @@ let remove_preprocessed inputfile =
 
 let is_ast_file ic ast_magic =
   try
-    let buffer = String.create (String.length ast_magic) in
-    really_input ic buffer 0 (String.length ast_magic);
+    let buffer = Misc.input_bytes ic (String.length ast_magic) in
     if buffer = ast_magic then true
     else if String.sub buffer 0 9 = String.sub ast_magic 0 9 then
-      failwith "Ocaml and preprocessor have incompatible versions"
+      failwith "OCaml and preprocessor have incompatible versions"
     else false
   with End_of_file -> false
 
@@ -433,10 +432,6 @@ let _ =
            "<f> Process <f> as a .ml file";
      "-intf", Arg.String (file_dependencies_as MLI),
            "<f> Process <f> as a .mli file";
-     "-ml-synonym", Arg.String(add_to_synonym_list ml_synonyms),
-       "<e> Consider <e> as a synonym of the .ml extension";
-     "-mli-synonym", Arg.String(add_to_synonym_list mli_synonyms),
-       "<e> Consider <e> as a synonym of the .mli extension";
      "-ml-synonym", Arg.String(add_to_synonym_list ml_synonyms),
        "<e> Consider <e> as a synonym of the .ml extension";
      "-mli-synonym", Arg.String(add_to_synonym_list mli_synonyms),

@@ -10,12 +10,7 @@
 (*                                                                     *)
 (***********************************************************************)
 
-(* $Id$ *)
-
-open Lambda
-
+open Clambda
 open Format
 
-val structured_constant: formatter -> structured_constant -> unit
-val lambda: formatter -> lambda -> unit
-val primitive: formatter -> primitive -> unit
+val clambda: formatter -> ulambda -> unit

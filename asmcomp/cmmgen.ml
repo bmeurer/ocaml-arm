@@ -159,13 +159,16 @@ let ignore_low_bit_int = function
   | Cop(Cor, [c; Cconst_int 1]) -> c
   | c -> c
 
-let is_nonzero_constant = function
-    Cconst_int n -> n <> 0
-  | Cconst_natint n -> n <> 0n
+(* Division or modulo on tagged integers.  The overflow case min_int / -1
+   cannot occur, but we must guard against division by zero. *)
+
+let is_different_from x = function
+    Cconst_int n -> n <> x
+  | Cconst_natint n -> n <> Nativeint.of_int x
   | _ -> false
 
 let safe_divmod op c1 c2 dbg =
-  if !Clflags.fast || is_nonzero_constant c2 then
+  if !Clflags.fast || is_different_from 0 c2 then
     Cop(op, [c1; c2])
   else
     bind "divisor" c2 (fun c2 ->
@@ -173,6 +176,35 @@ let safe_divmod op c1 c2 dbg =
                   Cop(op, [c1; c2]),
                   Cop(Craise dbg,
                       [Cconst_symbol "caml_bucket_Division_by_zero"])))
+
+(* Division or modulo on boxed integers.  The overflow case min_int / -1
+   can occur, in which case we force x / -1 = -x and x mod -1 = 0. (PR#5513). *)
+
+let safe_divmod_bi mkop mkm1 c1 c2 bi dbg =
+  bind "dividend" c1 (fun c1 ->
+  bind "divisor" c2 (fun c2 ->
+    let c3 =
+      if Arch.division_crashes_on_overflow
+      && (size_int = 4 || bi <> Pint32)
+      && not (is_different_from (-1) c2)
+      then
+        Cifthenelse(Cop(Ccmpi Cne, [c2; Cconst_int(-1)]), mkop c1 c2, mkm1 c1)
+      else
+        mkop c1 c2 in
+    if !Clflags.fast || is_different_from 0 c2 then
+      c3
+    else
+      Cifthenelse(c2, c3,
+                  Cop(Craise dbg,
+                      [Cconst_symbol "caml_bucket_Division_by_zero"]))))
+
+let safe_div_bi =
+  safe_divmod_bi (fun c1 c2 -> Cop(Cdivi, [c1;c2]))
+                 (fun c1 -> Cop(Csubi, [Cconst_int 0; c1]))
+
+let safe_mod_bi =
+  safe_divmod_bi (fun c1 c2 -> Cop(Cmodi, [c1;c2]))
+                 (fun c1 -> Cconst_int 0)
 
 (* Bool *)
 
@@ -382,8 +414,7 @@ let make_checkbound dbg = function
 let fundecls_size fundecls =
   let sz = ref (-1) in
   List.iter
-    (fun (label, arity, params, body) ->
-      sz := !sz + 1 + (if arity = 1 then 2 else 3))
+    (fun f -> sz := !sz + 1 + (if f.arity = 1 then 2 else 3))
     fundecls;
   !sz
 
@@ -461,7 +492,7 @@ let transl_constant = function
 (* Translate constant closures *)
 
 let constant_closures =
-  ref ([] : (string * (string * int * Ident.t list * ulambda) list) list)
+  ref ([] : (string * ufunction list) list)
 
 (* Boxed integers *)
 
@@ -808,7 +839,7 @@ let subst_boxed_number unbox_fn boxed_id unboxed_id exp =
 
 (* Translate an expression *)
 
-let functions = (Queue.create() : (string * Ident.t list * ulambda) Queue.t)
+let functions = (Queue.create() : ufunction Queue.t)
 
 let rec transl = function
     Uvar id ->
@@ -820,10 +851,7 @@ let rec transl = function
   | Uclosure(fundecls, []) ->
       let lbl = Compilenv.new_const_symbol() in
       constant_closures := (lbl, fundecls) :: !constant_closures;
-      List.iter
-        (fun (label, arity, params, body) ->
-          Queue.add (label, params, body) functions)
-        fundecls;
+      List.iter (fun f -> Queue.add f functions) fundecls;
       Cconst_symbol lbl
   | Uclosure(fundecls, clos_vars) ->
       let block_size =
@@ -831,22 +859,22 @@ let rec transl = function
       let rec transl_fundecls pos = function
           [] ->
             List.map transl clos_vars
-        | (label, arity, params, body) :: rem ->
-            Queue.add (label, params, body) functions;
+        | f :: rem ->
+            Queue.add f functions;
             let header =
               if pos = 0
               then alloc_closure_header block_size
               else alloc_infix_header pos in
-            if arity = 1 then
+            if f.arity = 1 then
               header ::
-              Cconst_symbol label ::
+              Cconst_symbol f.label ::
               int_const 1 ::
               transl_fundecls (pos + 3) rem
             else
               header ::
-              Cconst_symbol(curry_function arity) ::
-              int_const arity ::
-              Cconst_symbol label ::
+              Cconst_symbol(curry_function f.arity) ::
+              int_const f.arity ::
+              Cconst_symbol f.label ::
               transl_fundecls (pos + 4) rem in
       Cop(Calloc, transl_fundecls 0 fundecls)
   | Uoffset(arg, offset) ->
@@ -1288,13 +1316,13 @@ and transl_prim_2 p arg1 arg2 dbg =
       box_int bi (Cop(Cmuli,
                       [transl_unbox_int bi arg1; transl_unbox_int bi arg2]))
   | Pdivbint bi ->
-      box_int bi (safe_divmod Cdivi
+      box_int bi (safe_div_bi
                       (transl_unbox_int bi arg1) (transl_unbox_int bi arg2)
-                      dbg)
+                      bi dbg)
   | Pmodbint bi ->
-      box_int bi (safe_divmod Cmodi
+      box_int bi (safe_mod_bi
                       (transl_unbox_int bi arg1) (transl_unbox_int bi arg2)
-                      dbg)
+                      bi dbg)
   | Pandbint bi ->
       box_int bi (Cop(Cand,
                      [transl_unbox_int bi arg1; transl_unbox_int bi arg2]))
@@ -1556,11 +1584,12 @@ and transl_letrec bindings cont =
 
 (* Translate a function definition *)
 
-let transl_function lbl params body =
-  Cfunction {fun_name = lbl;
-             fun_args = List.map (fun id -> (id, typ_addr)) params;
-             fun_body = transl body;
-             fun_fast = !Clflags.optimize_for_speed}
+let transl_function f =
+  Cfunction {fun_name = f.label;
+             fun_args = List.map (fun id -> (id, typ_addr)) f.params;
+             fun_body = transl f.body;
+             fun_fast = !Clflags.optimize_for_speed;
+             fun_dbg  = f.dbg; }
 
 (* Translate all function definitions *)
 
@@ -1572,12 +1601,13 @@ module StringSet =
 
 let rec transl_all_functions already_translated cont =
   try
-    let (lbl, params, body) = Queue.take functions in
-    if StringSet.mem lbl already_translated then
+    let f = Queue.take functions in
+    if StringSet.mem f.label already_translated then
       transl_all_functions already_translated cont
     else begin
-      transl_all_functions (StringSet.add lbl already_translated)
-                           (transl_function lbl params body :: cont)
+      transl_all_functions
+        (StringSet.add f.label already_translated)
+        (transl_function f :: cont)
     end
   with Queue.Empty ->
     cont
@@ -1709,31 +1739,31 @@ and emit_boxed_int64_constant n cont =
 let emit_constant_closure symb fundecls cont =
   match fundecls with
     [] -> assert false
-  | (label, arity, params, body) :: remainder ->
+  | f1 :: remainder ->
       let rec emit_others pos = function
         [] -> cont
-      | (label, arity, params, body) :: rem ->
-          if arity = 1 then
+      | f2 :: rem ->
+          if f2.arity = 1 then
             Cint(infix_header pos) ::
-            Csymbol_address label ::
+            Csymbol_address f2.label ::
             Cint 3n ::
             emit_others (pos + 3) rem
           else
             Cint(infix_header pos) ::
-            Csymbol_address(curry_function arity) ::
-            Cint(Nativeint.of_int (arity lsl 1 + 1)) ::
-            Csymbol_address label ::
+            Csymbol_address(curry_function f2.arity) ::
+            Cint(Nativeint.of_int (f2.arity lsl 1 + 1)) ::
+            Csymbol_address f2.label ::
             emit_others (pos + 4) rem in
       Cint(closure_header (fundecls_size fundecls)) ::
       Cdefine_symbol symb ::
-      if arity = 1 then
-        Csymbol_address label ::
+      if f1.arity = 1 then
+        Csymbol_address f1.label ::
         Cint 3n ::
         emit_others 3 remainder
       else
-        Csymbol_address(curry_function arity) ::
-        Cint(Nativeint.of_int (arity lsl 1 + 1)) ::
-        Csymbol_address label ::
+        Csymbol_address(curry_function f1.arity) ::
+        Cint(Nativeint.of_int (f1.arity lsl 1 + 1)) ::
+        Csymbol_address f1.label ::
         emit_others 4 remainder
 
 (* Emit all structured constants *)
@@ -1764,7 +1794,8 @@ let compunit size ulam =
   let init_code = transl ulam in
   let c1 = [Cfunction {fun_name = Compilenv.make_symbol (Some "entry");
                        fun_args = [];
-                       fun_body = init_code; fun_fast = false}] in
+                       fun_body = init_code; fun_fast = false;
+                       fun_dbg  = Debuginfo.none }] in
   let c2 = transl_all_functions StringSet.empty c1 in
   let c3 = emit_all_constants c2 in
   Cdata [Cint(block_header 0 size);
@@ -1893,7 +1924,8 @@ let send_function arity =
    {fun_name = "caml_send" ^ string_of_int arity;
     fun_args = fun_args;
     fun_body = body;
-    fun_fast = true}
+    fun_fast = true;
+    fun_dbg  = Debuginfo.none }
 
 let apply_function arity =
   let (args, clos, body) = apply_function_body arity in
@@ -1902,7 +1934,8 @@ let apply_function arity =
    {fun_name = "caml_apply" ^ string_of_int arity;
     fun_args = List.map (fun id -> (id, typ_addr)) all_args;
     fun_body = body;
-    fun_fast = true}
+    fun_fast = true;
+    fun_dbg  = Debuginfo.none }
 
 (* Generate tuplifying functions:
       (defun caml_tuplifyN (arg clos)
@@ -1921,7 +1954,8 @@ let tuplify_function arity =
     fun_body =
       Cop(Capply(typ_addr, Debuginfo.none),
           get_field (Cvar clos) 2 :: access_components 0 @ [Cvar clos]);
-    fun_fast = true}
+    fun_fast = true;
+    fun_dbg  = Debuginfo.none }
 
 (* Generate currying functions:
       (defun caml_curryN (arg clos)
@@ -1972,7 +2006,8 @@ let final_curry_function arity =
                "_" ^ string_of_int (arity-1);
     fun_args = [last_arg, typ_addr; last_clos, typ_addr];
     fun_body = curry_fun [] last_clos (arity-1);
-    fun_fast = true}
+    fun_fast = true;
+    fun_dbg  = Debuginfo.none }
 
 let rec intermediate_curry_functions arity num =
   if num = arity - 1 then
@@ -1997,7 +2032,8 @@ let rec intermediate_curry_functions arity num =
                      [alloc_closure_header 4;
                       Cconst_symbol(name1 ^ "_" ^ string_of_int (num+1));
                       int_const 1; Cvar arg; Cvar clos]);
-      fun_fast = true}
+      fun_fast = true;
+      fun_dbg  = Debuginfo.none }
     ::
       (if arity - num > 2 then
 	  let rec iter i =
@@ -2023,7 +2059,8 @@ let rec intermediate_curry_functions arity num =
 	       fun_args = direct_args @ [clos, typ_addr];
 	       fun_body = iter (num+1)
 		  (List.map (fun (arg,_) -> Cvar arg) direct_args) clos;
-	       fun_fast = true}
+	       fun_fast = true;
+               fun_dbg = Debuginfo.none }
 	  in
 	  cf :: intermediate_curry_functions arity (num+1)
        else
@@ -2079,7 +2116,8 @@ let entry_point namelist =
   Cfunction {fun_name = "caml_program";
              fun_args = [];
              fun_body = body;
-             fun_fast = false}
+             fun_fast = false;
+             fun_dbg  = Debuginfo.none }
 
 (* Generate the table of globals *)
 

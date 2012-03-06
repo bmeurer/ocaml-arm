@@ -27,6 +27,9 @@
 
 /* Invoke the garbage collector. */
 
+        .globl  caml_system__code_begin
+caml_system__code_begin:
+        
         .globl  caml_call_gc
         .type   caml_call_gc, @function
 caml_call_gc:
@@ -185,15 +188,15 @@ caml_c_call:
     /* Save return address */
         mflr    25
     /* Get ready to call C function (address in 11) */
-        mtlr    11
+        mtctr   11
     /* Record lowest stack address and return address */
         Storeglobal(1, caml_bottom_of_stack, 12)
         Storeglobal(25, caml_last_return_address, 12)
     /* Make the exception handler and alloc ptr available to the C code */
         Storeglobal(31, caml_young_ptr, 11)
         Storeglobal(29, caml_exception_pointer, 11)
-    /* Call the function (address in link register) */
-        blrl
+    /* Call the function (address in CTR register) */
+        bctrl
     /* Restore return address (in 25, preserved by the C function) */
         mtlr    25
     /* Reload allocation pointer and allocation limit*/
@@ -407,6 +410,9 @@ caml_callback3_exn:
         mr      6, 0
         Addrglobal(12, caml_apply3)
         b       .L102
+
+        .globl  caml_system__code_end
+caml_system__code_end:
 
 /* Frame table */
 
