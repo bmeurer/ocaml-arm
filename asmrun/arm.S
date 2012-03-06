@@ -428,3 +428,8 @@ caml_system__frametable:
         .align  2
         .type   caml_system__frametable, %object
         .size   caml_system__frametable, .-caml_system__frametable
+
+#if defined(SYS_linux_eabi) || defined(SYS_linux_eabihf)
+    /* Make stack as non-executable */
+        .section .note.GNU-stack,"",%progbits
+#endif
