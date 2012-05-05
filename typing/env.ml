@@ -32,7 +32,21 @@ let value_declarations : ((string * Location.t), (unit -> unit)) Hashtbl.t = Has
 
 let type_declarations = Hashtbl.create 16
 
-let used_constructors : (string * Location.t * string, (unit -> unit)) Hashtbl.t = Hashtbl.create 16
+type constructor_usage = [`Positive|`Pattern|`Privatize]
+type constructor_usages =
+    {
+     mutable cu_positive: bool;
+     mutable cu_pattern: bool;
+     mutable cu_privatize: bool;
+    }
+let add_constructor_usage cu = function
+  | `Positive -> cu.cu_positive <- true
+  | `Pattern -> cu.cu_pattern <- true
+  | `Privatize -> cu.cu_privatize <- true
+let constructor_usages () =
+  {cu_positive = false; cu_pattern = false; cu_privatize = false}
+
+let used_constructors : (string * Location.t * string, (constructor_usage -> unit)) Hashtbl.t = Hashtbl.create 16
 
 type error =
     Not_an_interface of string
@@ -105,6 +119,7 @@ type t = {
   summary: summary;
   local_constraints: bool;
   gadt_instances: (int * TypeSet.t ref) list;
+  in_signature: bool;
 }
 
 and module_components = module_components_repr Lazy.t
@@ -144,7 +159,11 @@ let empty = {
   modules = EnvTbl.empty; modtypes = EnvTbl.empty;
   components = EnvTbl.empty; classes = EnvTbl.empty;
   cltypes = EnvTbl.empty; 
-  summary = Env_empty; local_constraints = false; gadt_instances = [] }
+  summary = Env_empty; local_constraints = false; gadt_instances = [];
+  in_signature = false;
+ }
+
+let in_signature env = {env with in_signature = true}
 
 let diff_keys is_local tbl1 tbl2 =
   let keys2 = EnvTbl.keys tbl2 in
@@ -161,7 +180,7 @@ let is_ident = function
 let is_local (p, _) = is_ident p
 
 let is_local_exn = function
-    {cstr_tag = Cstr_exception p} -> is_ident p
+    {cstr_tag = Cstr_exception (p, _)} -> is_ident p
   | _ -> false
 
 let diff env1 env2 =
@@ -201,7 +220,7 @@ type pers_struct =
     ps_flags: pers_flags list }
 
 let persistent_structures =
-  (Hashtbl.create 17 : (string, pers_struct) Hashtbl.t)
+  (Hashtbl.create 17 : (string, pers_struct option) Hashtbl.t)
 
 (* Consistency between persistent structures *)
 
@@ -254,17 +273,29 @@ let read_pers_struct modname filename =
         if not !Clflags.recursive_types then
           raise(Error(Need_recursive_types(ps.ps_name, !current_unit))))
       ps.ps_flags;
-    Hashtbl.add persistent_structures modname ps;
+    Hashtbl.add persistent_structures modname (Some ps);
     ps
   with End_of_file | Failure _ ->
     close_in ic;
     raise(Error(Corrupted_interface(filename)))
 
 let find_pers_struct name =
-  try
-    Hashtbl.find persistent_structures name
-  with Not_found ->
-    read_pers_struct name (find_in_path_uncap !load_path (name ^ ".cmi"))
+  if name = "*predef*" then raise Not_found;
+  let r =
+    try Some (Hashtbl.find persistent_structures name)
+    with Not_found -> None
+  in
+  match r with
+  | Some None -> raise Not_found
+  | Some (Some sg) -> sg
+  | None ->
+      let filename =
+        try find_in_path_uncap !load_path (name ^ ".cmi")
+        with Not_found ->
+          Hashtbl.add persistent_structures name None;
+          raise Not_found
+      in
+      read_pers_struct name filename
 
 let reset_cache () =
   current_unit := "";
@@ -272,6 +303,10 @@ let reset_cache () =
   Consistbl.clear crc_units;
   Hashtbl.clear value_declarations;
   Hashtbl.clear type_declarations
+
+let reset_missing_cmis () =
+  let l = Hashtbl.fold (fun name r acc -> if r = None then name :: acc else acc) persistent_structures [] in
+  List.iter (Hashtbl.remove persistent_structures) l
 
 let set_unit_name name =
   current_unit := name
@@ -511,8 +546,12 @@ let mark_type_used name vd =
   try Hashtbl.find type_declarations (name, vd.type_loc) ()
   with Not_found -> ()
 
-let mark_constructor_used name vd constr =
-  try Hashtbl.find used_constructors (name, vd.type_loc, constr) ()
+let mark_constructor_used usage name vd constr =
+  try Hashtbl.find used_constructors (name, vd.type_loc, constr) usage
+  with Not_found -> ()
+
+let mark_exception_used usage ed constr =
+  try Hashtbl.find used_constructors ("exn", ed.exn_loc, constr) usage
   with Not_found -> ()
 
 let set_value_used_callback name vd callback =
@@ -554,11 +593,18 @@ let lookup_constructor lid env =
   mark_type_path env (ty_path desc.cstr_res);
   desc
 
-let mark_constructor env name desc =
-  let ty_path = ty_path desc.cstr_res in
-  let ty_decl = try find_type ty_path env with Not_found -> assert false in
-  let ty_name = Path.last ty_path in
-  mark_constructor_used ty_name ty_decl name
+let mark_constructor usage env name desc =
+  match desc.cstr_tag with
+  | Cstr_exception (_, loc) ->
+      begin
+        try Hashtbl.find used_constructors ("exn", loc, name) usage
+        with Not_found -> ()
+      end
+  | _ ->
+      let ty_path = ty_path desc.cstr_res in
+      let ty_decl = try find_type ty_path env with Not_found -> assert false in
+      let ty_name = Path.last ty_path in
+      mark_constructor_used usage ty_name ty_decl name
 
 let lookup_label lid env =
   let desc = lookup_label lid env in
@@ -830,20 +876,26 @@ and store_type id path info env =
   let constructors = constructors_of_type path info in
   let labels = labels_of_type path info in
 
-  if not loc.Location.loc_ghost && Warnings.is_active (Warnings.Unused_constructor "") then begin
+  if not env.in_signature && not loc.Location.loc_ghost &&
+    Warnings.is_active (Warnings.Unused_constructor ("", false, false))
+  then begin
     let ty = Ident.name id in
     List.iter
       (fun (c, _) ->
         let k = (ty, loc, c) in
         if not (Hashtbl.mem used_constructors k) then
-          let used = ref false in
-          Hashtbl.add used_constructors k (fun () -> used := true);
-          !add_delayed_check_forward
-            (fun () ->
-              if not !used then
-                Location.prerr_warning loc (Warnings.Unused_constructor c)
-            )
-         )
+          let used = constructor_usages () in
+          Hashtbl.add used_constructors k (add_constructor_usage used);
+          if not (ty = "" || ty.[0] = '_')
+          then !add_delayed_check_forward
+              (fun () ->
+                if not used.cu_positive then
+                  Location.prerr_warning loc
+                    (Warnings.Unused_constructor
+                       (c, used.cu_pattern, used.cu_privatize)
+                    )
+              )
+      )
       constructors
   end;
   { env with
@@ -877,6 +929,26 @@ and store_type_infos id path info env =
     summary = Env_type(env.summary, id, info) }
 
 and store_exception id path decl env =
+  let loc = decl.exn_loc in
+  if not env.in_signature && not loc.Location.loc_ghost &&
+    Warnings.is_active (Warnings.Unused_exception ("", false))
+  then begin
+    let ty = "exn" in
+    let c = Ident.name id in
+    let k = (ty, loc, c) in
+    if not (Hashtbl.mem used_constructors k) then begin
+      let used = constructor_usages () in
+      Hashtbl.add used_constructors k (add_constructor_usage used);
+      !add_delayed_check_forward
+        (fun () ->
+          if not used.cu_positive then
+            Location.prerr_warning loc
+              (Warnings.Unused_exception
+                 (c, used.cu_pattern)
+              )
+        )
+    end;
+  end;
   { env with
     constrs = EnvTbl.add id (Datarepr.exception_descr path decl) env.constrs;
     summary = Env_exception(env.summary, id, decl) }
@@ -1089,7 +1161,7 @@ let save_signature_with_imports sg modname filename imports =
         ps_crcs = crcs;
         ps_filename = filename;
         ps_flags = flags } in
-    Hashtbl.add persistent_structures modname ps;
+    Hashtbl.add persistent_structures modname (Some ps);
     Consistbl.set crc_units modname crc filename
   with exn ->
     close_out oc;

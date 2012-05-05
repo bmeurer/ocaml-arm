@@ -200,17 +200,23 @@ let rec compare_records env decl1 decl2 n labels1 labels2 =
       then compare_records env decl1 decl2 (n+1) rem1 rem2
       else [Field_type lab1]
 
-let type_declarations env id decl1 decl2 =
+let type_declarations ?(equality = false) env name decl1 id decl2 =
   if decl1.type_arity <> decl2.type_arity then [Arity] else
   if not (private_flags decl1 decl2) then [Privacy] else
   let err = match (decl1.type_kind, decl2.type_kind) with
       (_, Type_abstract) -> []
     | (Type_variant cstrs1, Type_variant cstrs2) ->
-        let name = Ident.name id in
-        if decl1.type_private = Private || decl2.type_private = Public then
+        let mark cstrs usage name decl =
           List.iter
-            (fun (c, _, _) -> Env.mark_constructor_used name decl1 c)
-            cstrs1;
+            (fun (c, _, _) -> Env.mark_constructor_used usage name decl c)
+            cstrs
+        in
+        let usage =
+          if decl1.type_private = Private || decl2.type_private = Public
+          then `Positive else `Privatize
+        in
+        mark cstrs1 usage name decl1;
+        if equality then mark cstrs2 `Positive (Ident.name id) decl2;
         compare_variants env decl1 decl2 1 cstrs1 cstrs2
     | (Type_record(labels1,rep1), Type_record(labels2,rep2)) ->
         let err = compare_records env decl1 decl2 1 labels1 labels2 in
@@ -253,7 +259,7 @@ let type_declarations env id decl1 decl2 =
 (* Inclusion between exception declarations *)
 
 let exception_declarations env ed1 ed2 =
-  Misc.for_all2 (fun ty1 ty2 -> Ctype.equal env false [ty1] [ty2]) ed1 ed2
+  Misc.for_all2 (fun ty1 ty2 -> Ctype.equal env false [ty1] [ty2]) ed1.exn_args ed2.exn_args
 
 (* Inclusion between class types *)
 let encode_val (mut, ty) rem =

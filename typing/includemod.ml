@@ -63,12 +63,13 @@ let value_descriptions env cxt subst id vd1 vd2 =
 let type_declarations env cxt subst id decl1 decl2 =
   Env.mark_type_used (Ident.name id) decl1;
   let decl2 = Subst.type_declaration subst decl2 in
-  let err = Includecore.type_declarations env id decl1 decl2 in
+  let err = Includecore.type_declarations env (Ident.name id) decl1 id decl2 in
   if err <> [] then raise(Error[cxt, Type_declarations(id, decl1, decl2, err)])
 
 (* Inclusion between exception declarations *)
 
 let exception_declarations env cxt subst id decl1 decl2 =
+  Env.mark_exception_used `Positive decl1 (Ident.name id);
   let decl2 = Subst.exception_declaration subst decl2 in
   if Includecore.exception_declarations env decl1 decl2
   then ()
@@ -181,7 +182,7 @@ and try_modtypes2 env cxt mty1 mty2 =
 and signatures env cxt subst sig1 sig2 =
   (* Environment used to check inclusion of components *)
   let new_env =
-    Env.add_signature sig1 env in
+    Env.add_signature sig1 (Env.in_signature env) in
   (* Build a table of the components of sig1, along with their positions.
      The table is indexed by kind and name of component *)
   let rec build_component_table pos tbl = function
@@ -368,8 +369,9 @@ let include_err ppf = function
       fprintf ppf
        "@[<hv 2>Exception declarations do not match:@ \
         %a@;<1 -2>is not included in@ %a@]"
-      (exception_declaration id) d1
-      (exception_declaration id) d2
+        (exception_declaration id) d1
+        (exception_declaration id) d2;
+      show_locs ppf (d1.exn_loc, d2.exn_loc)
   | Module_types(mty1, mty2)->
       fprintf ppf
        "@[<hv 2>Modules do not match:@ \

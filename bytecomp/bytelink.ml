@@ -177,7 +177,7 @@ let check_consistency ppf file_name cu =
   begin try
     let source = List.assoc cu.cu_name !implementations_defined in
     Location.print_warning (Location.in_file file_name) ppf
-      (Warnings.Multiple_definition(cu.cu_name, file_name, source))
+      (Warnings.Multiple_definition(cu.cu_name, Location.show_filename file_name, Location.show_filename source))
   with Not_found -> ()
   end;
   implementations_defined :=
@@ -466,6 +466,7 @@ let link_bytecode_as_c ppf tolink outfile =
     close_out outchan
   with x ->
     close_out outchan;
+    remove_file outfile;
     raise x
   end;
   if !Clflags.debug then
@@ -578,20 +579,25 @@ open Format
 
 let report_error ppf = function
   | File_not_found name ->
-      fprintf ppf "Cannot find file %s" name
+      fprintf ppf "Cannot find file %a" Location.print_filename name
   | Not_an_object_file name ->
-      fprintf ppf "The file %s is not a bytecode object file" name
+      fprintf ppf "The file %a is not a bytecode object file"
+        Location.print_filename name
   | Symbol_error(name, err) ->
-      fprintf ppf "Error while linking %s:@ %a" name
+      fprintf ppf "Error while linking %a:@ %a" Location.print_filename name
       Symtable.report_error err
   | Inconsistent_import(intf, file1, file2) ->
       fprintf ppf
-        "@[<hov>Files %s@ and %s@ \
+        "@[<hov>Files %a@ and %a@ \
                  make inconsistent assumptions over interface %s@]"
-        file1 file2 intf
+        Location.print_filename file1
+        Location.print_filename file2
+        intf
   | Custom_runtime ->
       fprintf ppf "Error while building custom runtime system"
   | File_exists file ->
-      fprintf ppf "Cannot overwrite existing file %s" file
+      fprintf ppf "Cannot overwrite existing file %a"
+        Location.print_filename file
   | Cannot_open_dll file ->
-      fprintf ppf "Error on dynamically loaded library: %s" file
+      fprintf ppf "Error on dynamically loaded library: %a"
+        Location.print_filename file

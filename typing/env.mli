@@ -93,6 +93,7 @@ val enter_cltype: string -> cltype_declaration -> t -> Ident.t * t
 
 (* Initialize the cache of in-core module interfaces. *)
 val reset_cache: unit -> unit
+val reset_missing_cmis: unit -> unit
 
 (* Remember the name of the current compilation unit. *)
 val set_unit_name: string -> unit
@@ -152,10 +153,16 @@ open Format
 
 val report_error: formatter -> error -> unit
 
+
 val mark_value_used: string -> value_description -> unit
 val mark_type_used: string -> type_declaration -> unit
-val mark_constructor_used: string -> type_declaration -> string -> unit
-val mark_constructor: t -> string -> constructor_description -> unit
+
+type constructor_usage = [`Positive|`Pattern|`Privatize]
+val mark_constructor_used: constructor_usage -> string -> type_declaration -> string -> unit
+val mark_constructor: constructor_usage -> t -> string -> constructor_description -> unit
+val mark_exception_used: constructor_usage -> exception_declaration -> string -> unit
+
+val in_signature: t -> t
 
 val set_value_used_callback: string -> value_description -> (unit -> unit) -> unit
 val set_type_used_callback: string -> type_declaration -> ((unit -> unit) -> unit) -> unit

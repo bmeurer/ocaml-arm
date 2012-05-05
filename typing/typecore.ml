@@ -666,6 +666,7 @@ let rec type_pat ~constrs ~labels ~no_existentials ~mode ~env sp expected_ty =
             Hashtbl.find constrs s
         | _ ->  Typetexp.find_constructor !env loc lid
       in
+      Env.mark_constructor `Pattern !env (Longident.last lid) constr;
       if no_existentials && constr.cstr_existentials <> [] then
         raise (Error (loc, Unexpected_existential));
       (* if constructor is gadt, we must verify that the expected type has the
@@ -2322,11 +2323,14 @@ and type_argument env sarg ty_expected' ty_expected =
     let ls, tvar = list_labels env ty in
     not tvar && List.for_all ((=) "") ls
   in
-  (* let ty_expected = instance ty_expected' in *)
-  match expand_head env ty_expected', sarg with
-  | _, {pexp_desc = Pexp_function(l,_,_)} when not (is_optional l) ->
-      type_expect env sarg ty_expected'
-  | {desc = Tarrow("",ty_arg,ty_res,_); level = lv}, _ ->
+  let rec is_inferred sexp =
+    match sexp.pexp_desc with
+      Pexp_ident _ | Pexp_apply _ | Pexp_send _ | Pexp_field _ -> true
+    | Pexp_open (_, e) -> is_inferred e
+    | _ -> false
+  in
+  match expand_head env ty_expected' with
+    {desc = Tarrow("",ty_arg,ty_res,_); level = lv} when is_inferred sarg ->
       (* apply optional arguments when expected type is "" *)
       (* we must be very careful about not breaking the semantics *)
       if !Clflags.principal then begin_def ();
@@ -2364,7 +2368,8 @@ and type_argument env sarg ty_expected' ty_expected =
         {pat_desc = Tpat_var id; pat_type = ty;
          pat_loc = Location.none; pat_env = env},
         {exp_type = ty; exp_loc = Location.none; exp_env = env; exp_desc =
-         Texp_ident(Path.Pident id,{val_type = ty; val_kind = Val_reg; val_loc = Location.none})}
+         Texp_ident(Path.Pident id, {val_type = ty; val_kind = Val_reg;
+                                     val_loc = Location.none})}
       in
       let eta_pat, eta_var = var_pair "eta" ty_arg in
       let func texp =
@@ -2565,7 +2570,7 @@ and type_application env funct sargs =
 
 and type_construct env loc lid sarg explicit_arity ty_expected =
   let constr = Typetexp.find_constructor env loc lid in
-  Env.mark_constructor env (Longident.last lid) constr;
+  Env.mark_constructor `Positive env (Longident.last lid) constr;
   let sargs =
     match sarg with
       None -> []
@@ -2656,6 +2661,8 @@ and type_cases ?in_function env ty_arg ty_res partial_flag loc caselist =
       (lev, Env.add_gadt_instance_level lev env)
     end else (get_current_level (), env)
   in
+  (* if has_gadts then
+    Format.printf "lev = %d@.%a@." lev Printtyp.raw_type_expr ty_res;*)
   begin_def (); (* propagation of the argument *)
   let ty_arg' = newvar () in
   let pattern_force = ref [] in
@@ -2766,9 +2773,7 @@ and type_let ?(check = fun s -> Warnings.Unused_var s)
         | _, Pexp_constraint (_, Some sty, None) when !Clflags.principal ->
             (* propagate type annotation to pattern,
                to allow it to be generalized in -principal mode *)
-            {ppat_desc = Ppat_constraint
-               (spat, {ptyp_desc=Ptyp_poly([],sty);
-                       ptyp_loc={sty.ptyp_loc with Location.loc_ghost=true}});
+            {ppat_desc = Ppat_constraint (spat, sty);
              ppat_loc = {spat.ppat_loc with Location.loc_ghost=true}}
         | _ -> spat)
       spat_sexp_list in
@@ -2812,7 +2817,8 @@ and type_let ?(check = fun s -> Warnings.Unused_var s)
     if is_recursive then new_env else env in
 
   let current_slot = ref None in
-  let warn_unused = Warnings.is_active (check "") || Warnings.is_active (check_strict "") in
+  let warn_unused =
+    Warnings.is_active (check "") || Warnings.is_active (check_strict "") in
   let pat_slot_list =
     (* Algorithm to detect unused declarations in recursive bindings:
        - During type checking of the definitions, we capture the 'value_used'

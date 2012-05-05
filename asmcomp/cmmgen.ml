@@ -78,7 +78,10 @@ let int_const n =
           (Nativeint.add (Nativeint.shift_left (Nativeint.of_int n) 1) 1n)
 
 let add_const c n =
-  if n = 0 then c else Cop(Caddi, [c; Cconst_int n])
+  if n = 0 then c
+  else match c with
+  | Cconst_int x when no_overflow_add x n -> Cconst_int (x + n)
+  | c -> Cop(Caddi, [c; Cconst_int n])
 
 let incr_int = function
     Cconst_int n when n < max_int -> Cconst_int(n+1)
@@ -1402,20 +1405,23 @@ and transl_prim_3 p arg1 arg2 arg3 dbg =
                           float_array_set arr idx
                                           (unbox_float newval)))))))
       | Paddrarray ->
+          bind "newval" (transl arg3) (fun newval ->
           bind "index" (transl arg2) (fun idx ->
-            bind "arr" (transl arg1) (fun arr ->
-              Csequence(make_checkbound dbg [addr_array_length(header arr); idx],
-                        addr_array_set arr idx (transl arg3))))
+          bind "arr" (transl arg1) (fun arr ->
+            Csequence(make_checkbound dbg [addr_array_length(header arr); idx],
+                      addr_array_set arr idx newval))))
       | Pintarray ->
+          bind "newval" (transl arg3) (fun newval ->
           bind "index" (transl arg2) (fun idx ->
-            bind "arr" (transl arg1) (fun arr ->
-              Csequence(make_checkbound dbg [addr_array_length(header arr); idx],
-                        int_array_set arr idx (transl arg3))))
+          bind "arr" (transl arg1) (fun arr ->
+            Csequence(make_checkbound dbg [addr_array_length(header arr); idx],
+                      int_array_set arr idx newval))))
       | Pfloatarray ->
+          bind "newval" (transl_unbox_float arg3) (fun newval ->
           bind "index" (transl arg2) (fun idx ->
-            bind "arr" (transl arg1) (fun arr ->
-              Csequence(make_checkbound dbg [float_array_length(header arr);idx],
-                        float_array_set arr idx (transl_unbox_float arg3))))
+          bind "arr" (transl arg1) (fun arr ->
+            Csequence(make_checkbound dbg [float_array_length(header arr);idx],
+                      float_array_set arr idx newval))))
       end)
   | _ ->
     fatal_error "Cmmgen.transl_prim_3"

@@ -633,12 +633,14 @@ let rec generalize_structure var_level ty =
   if ty.level <> generic_level then begin
     if is_Tvar ty && ty.level > var_level then
       set_level ty var_level
-    else if ty.level > !current_level then begin
+    else if
+      ty.level > !current_level &&
+      match ty.desc with
+        Tconstr (p, _, abbrev) ->
+          not (is_object_type p) && (abbrev := Mnil; true)
+      | _ -> true
+    then begin
       set_level ty generic_level;
-      begin match ty.desc with
-        Tconstr (_, _, abbrev) -> abbrev := Mnil
-      | _ -> ()
-      end;
       iter_type_expr (generalize_structure var_level) ty
     end
   end
@@ -653,9 +655,21 @@ let rec generalize_spine ty =
   let ty = repr ty in
   if ty.level < !current_level || ty.level = generic_level then () else
   match ty.desc with
-    Tarrow (_, _, ty', _) | Tpoly (ty', _) ->
+    Tarrow (_, ty1, ty2, _) ->
+      set_level ty generic_level;
+      generalize_spine ty1;
+      generalize_spine ty2;
+  | Tpoly (ty', _) ->
       set_level ty generic_level;
       generalize_spine ty'
+  | Ttuple tyl
+  | Tpackage (_, _, tyl) ->
+      set_level ty generic_level;
+      List.iter generalize_spine tyl
+  | Tconstr (p, tyl, memo) when not (is_object_type p) ->
+      set_level ty generic_level;
+      memo := Mnil;
+      List.iter generalize_spine tyl
   | _ -> ()
 
 let forward_try_expand_once = (* Forward declaration *)
@@ -983,6 +997,8 @@ let rec copy ?env ?partial ty =
               dup_kind r;
               copy_type_desc copy desc
           end
+      | Tobject (ty1, _) when partial <> None ->
+          Tobject (copy ty1, ref None)
       | _ -> copy_type_desc copy desc
       end;
     t
@@ -2134,7 +2150,7 @@ and unify3 env t1 t1' t2 t2' =
   | (Tvar _, _) ->
       occur !env t1 t2';
       occur_univar !env t2;
-      link_type t1' t2;      
+      link_type t1' t2;
   | (_, Tvar _) ->
       occur !env t2 t1';
       occur_univar !env t1;
@@ -2171,19 +2187,19 @@ and unify3 env t1 t1' t2 t2' =
       | (Tconstr ((Path.Pident p) as path,[],_),
          Tconstr ((Path.Pident p') as path',[],_))
         when is_abstract_newtype !env path && is_abstract_newtype !env path'
-        && !generate_equations -> 
-          let source,destination = 
+        && !generate_equations ->
+          let source,destination =
             if find_newtype_level !env path > find_newtype_level !env path'
             then  p,t2'
             else  p',t1'
           in add_gadt_equation env source destination
       | (Tconstr ((Path.Pident p) as path,[],_), _)
-        when is_abstract_newtype !env path && !generate_equations -> 
+        when is_abstract_newtype !env path && !generate_equations ->
           reify env t2';
           local_non_recursive_abbrev !env (Path.Pident p) t2';
           add_gadt_equation env p t2'
       | (_, Tconstr ((Path.Pident p) as path,[],_))
-        when is_abstract_newtype !env path && !generate_equations -> 
+        when is_abstract_newtype !env path && !generate_equations ->
           reify env t1' ;
           local_non_recursive_abbrev !env (Path.Pident p) t1';
           add_gadt_equation env p t1'
@@ -2197,7 +2213,7 @@ and unify3 env t1 t1' t2 t2' =
           (* XXX One should do some kind of unification... *)
           begin match (repr t2').desc with
             Tobject (_, {contents = Some (_, va::_)}) when
-	      (match (repr va).desc with
+              (match (repr va).desc with
                 Tvar _|Tunivar _|Tnil -> true | _ -> false) -> ()
           | Tobject (_, nm2) -> set_name nm2 !nm1
           | _ -> ()

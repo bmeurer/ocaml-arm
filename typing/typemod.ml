@@ -394,7 +394,7 @@ and transl_signature env sg =
             let rem = transl_sig newenv srem in
             map_rec' (fun rs (id, info) -> Tsig_type(id, info, rs)) decls rem
         | Psig_exception(name, sarg) ->
-            let arg = Typedecl.transl_exception env sarg in
+            let arg = Typedecl.transl_exception env item.psig_loc sarg in
             let (id, newenv) = Env.enter_exception name arg env in
             let rem = transl_sig newenv srem in
             Tsig_exception(id, arg) :: rem
@@ -461,7 +461,7 @@ and transl_signature env sg =
                      Tsig_type(i', d', rs);
                      Tsig_type(i'', d'', rs)])
                  classes [rem])
-    in transl_sig env sg
+    in transl_sig (Env.in_signature env) sg
 
 and transl_modtype_info env sinfo =
   match sinfo with
@@ -841,8 +841,8 @@ and type_structure funct_body anchor env sstr scope =
         (Tstr_type decls :: str_rem,
          map_rec' (fun rs (id, info) -> Tsig_type(id, info, rs)) decls sig_rem,
          final_env)
-    | {pstr_desc = Pstr_exception(name, sarg)} :: srem ->
-        let arg = Typedecl.transl_exception env sarg in
+    | {pstr_desc = Pstr_exception(name, sarg); pstr_loc = loc} :: srem ->
+        let arg = Typedecl.transl_exception env loc sarg in
         let (id, newenv) = Env.enter_exception name arg env in
         let (str_rem, sig_rem, final_env) = type_struct newenv srem in
         (Tstr_exception(id, arg) :: str_rem,
@@ -1223,11 +1223,13 @@ let report_error ppf = function
            contains type variables that cannot be generalized@]" modtype mty
   | Implementation_is_required intf_name ->
       fprintf ppf
-        "@[The interface %s@ declares values, not just types.@ \
-           An implementation must be provided.@]" intf_name
+        "@[The interface %a@ declares values, not just types.@ \
+           An implementation must be provided.@]"
+        Location.print_filename intf_name
   | Interface_not_compiled intf_name ->
       fprintf ppf
-        "@[Could not find the .cmi file for interface@ %s.@]" intf_name
+        "@[Could not find the .cmi file for interface@ %a.@]"
+        Location.print_filename intf_name
   | Not_allowed_in_functor_body ->
       fprintf ppf
         "This kind of expression is not allowed within the body of a functor."

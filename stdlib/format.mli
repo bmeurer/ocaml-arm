@@ -22,7 +22,8 @@
 
    For a gentle introduction to the basics of pretty-printing using
    [Format], read
-   {{:http://caml.inria.fr/resources/doc/guides/format.html}http://caml.inria.fr/resources/doc/guides/format.html}.
+   {{:http://caml.inria.fr/resources/doc/guides/format.en.html}
+    http://caml.inria.fr/resources/doc/guides/format.en.html}.
 
    You may consider this module as providing an extension to the
    [printf] facility to provide automatic line breaking. The addition of
@@ -281,7 +282,7 @@ type tag = string;;
    those strings is considered as zero for line breaking).
 
    Thus, tag handling is in some sense transparent to pretty-printing
-   and does not interfere with usual pretty-printing. Hence, a single
+   and does not interfere with usual indentation. Hence, a single
    pretty printing routine can output both simple ``verbatim''
    material or richer decorated output depending on the treatment of
    tags. By default, tags are not active, hence the output is not
@@ -371,6 +372,35 @@ val get_formatter_output_functions :
  how to handle indentation, line breaking, and even printing of all the
  characters that have to be printed! *)
 
+type formatter_out_functions = {
+  out_string : string -> int -> int -> unit;
+  out_flush : unit -> unit;
+  out_newline : unit -> unit;
+  out_spaces : int -> unit;
+}
+;;
+
+val set_formatter_out_functions: formatter_out_functions -> unit;;
+(** [set_formatter_out_functions out_funs]
+   redirects the pretty-printer output to the functions [out_funs.out_string] and
+   [out_funs.out_flush] as described in [set_formatter_output_functions]. In
+   addition, the pretty-printer function that outputs a newline is set
+   to the function [out_funs.out_newline] and the function that outputs
+   indentation spaces is set to the function [out_funs.out_spaces].
+
+   This way, you can change the meaning of indentation (which can be
+   something else than just printing space characters) and the meaning of new
+   lines opening (which can be connected to any other action needed by the
+   application at hand). The two functions [out_spaces] and [out_newline] are
+   normally connected to [out_string] and [out_flush]: respective default
+   values for [out_space] and [out_newline] are
+   [out_string (String.make n ' ') 0 n] and [out_string "\n" 0 1]. *)
+
+val get_formatter_out_functions: unit -> formatter_out_functions;;
+(** Return the current output functions of the pretty-printer,
+   including line breaking and indentation functions. Useful to record the
+   current setting and restore it afterwards. *)
+
 val set_all_formatter_output_functions :
   out:(string -> int -> int -> unit) ->
   flush:(unit -> unit) ->
@@ -378,20 +408,10 @@ val set_all_formatter_output_functions :
   spaces:(int -> unit) ->
   unit
 ;;
-(** [set_all_formatter_output_functions out flush outnewline outspace]
-   redirects the pretty-printer output to the functions [out] and
-   [flush] as described in [set_formatter_output_functions]. In
-   addition, the pretty-printer function that outputs a newline is set
-   to the function [outnewline] and the function that outputs
-   indentation spaces is set to the function [outspace].
-
-   This way, you can change the meaning of indentation (which can be
-   something else than just printing space characters) and the
-   meaning of new lines opening (which can be connected to any other
-   action needed by the application at hand). The two functions
-   [outspace] and [outnewline] are normally connected to [out] and
-   [flush]: respective default values for [outspace] and [outnewline]
-   are [out (String.make n ' ') 0 n] and [out "\n" 0 1]. *)
+(**
+  Deprecated.
+  @since 4.0.
+*)
 
 val get_all_formatter_output_functions :
   unit ->
@@ -400,10 +420,10 @@ val get_all_formatter_output_functions :
   (unit -> unit) *
   (int -> unit)
 ;;
-(** Return the current output functions of the pretty-printer,
-   including line breaking and indentation functions. Useful to record the
-   current setting and restore it afterwards. *)
-
+(**
+  Deprecated.
+  @since 4.0.
+*)
 (** {6:tagsmeaning Changing the meaning of printing semantics tags} *)
 
 type formatter_tag_functions = {
@@ -420,10 +440,7 @@ type formatter_tag_functions = {
    [print] versions are the ``tag printing'' functions that can perform
    regular printing when a tag is closed or opened. *)
 
-val set_formatter_tag_functions :
-  formatter_tag_functions -> unit
-;;
-
+val set_formatter_tag_functions : formatter_tag_functions -> unit;;
 (** [set_formatter_tag_functions tag_funs] changes the meaning of
    opening and closing tags to use the functions in [tag_funs].
 
@@ -439,9 +456,7 @@ val set_formatter_tag_functions :
    called at tag opening and tag closing time, to output regular
    material in the pretty-printer queue. *)
 
-val get_formatter_tag_functions :
-  unit -> formatter_tag_functions
-;;
+val get_formatter_tag_functions : unit -> formatter_tag_functions;;
 (** Return the current tag functions of the pretty-printer. *)
 
 (** {6 Multiple formatted output} *)
@@ -631,13 +646,19 @@ val fprintf : formatter -> ('a, formatter, unit) format -> 'a;;
      For more details about tags, see the functions [open_tag] and
      [close_tag].
    - [@\}]: close the most recently opened tag.
-   - [@@]: print a plain [@] character.
    - [@%]: print a plain [%] character.
 
    Example: [printf "@[%s@ %d@]@." "x =" 1] is equivalent to
    [open_box (); print_string "x ="; print_space ();
     print_int 1; close_box (); print_newline ()].
    It prints [x = 1] within a pretty-printing box.
+
+   Note: the old [@@] ``pretty-printing indication'' is now deprecated, since
+   it had no pretty-printing indication semantics. If you need to prevent
+   the pretty-printing indication interpretation of a [@] character, simply
+   use the regular way to escape a character in format string: write [%@].
+   @since 3.12.2.
+
 *)
 
 val printf : ('a, formatter, unit) format -> 'a;;

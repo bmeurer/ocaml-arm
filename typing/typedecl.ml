@@ -359,8 +359,10 @@ let check_abbrev env (_, sdecl) (id, decl) =
               else if not (Ctype.equal env false args decl.type_params)
               then [Includecore.Constraint]
               else
-                Includecore.type_declarations env id
+                Includecore.type_declarations ~equality:true env
+                  (Path.last path)
                   decl'
+                  id
                   (Subst.type_declaration
                      (Subst.add_type id path Subst.identity) decl)
             in
@@ -764,12 +766,17 @@ let transl_type_decl env name_sdecl_list =
         (fun old_callback ->
           match !current_slot with
           | Some slot -> slot := (name, td) :: !slot
-          | None -> List.iter (fun (name, d) -> Env.mark_type_used name d) (get_ref slot); old_callback ()
+          | None ->
+              List.iter (fun (name, d) -> Env.mark_type_used name d)
+                (get_ref slot);
+              old_callback ()
         );
       id, Some slot
   in
-  let transl_declaration name_sdecl (id, slot) = current_slot := slot; transl_declaration temp_env name_sdecl id in
-  let decls = List.map2 transl_declaration name_sdecl_list (List.map id_slots id_list) in
+  let transl_declaration name_sdecl (id, slot) =
+    current_slot := slot; transl_declaration temp_env name_sdecl id in
+  let decls =
+    List.map2 transl_declaration name_sdecl_list (List.map id_slots id_list) in
   current_slot := None;
   (* Check for duplicates *)
   check_duplicates name_sdecl_list;
@@ -826,13 +833,14 @@ let transl_closed_type env sty =
   | []      -> ty
   | tv :: _ -> raise (Error (sty.ptyp_loc, Unbound_type_var_exc (tv, ty)))
 
-let transl_exception env excdecl =
+let transl_exception env loc excdecl =
   reset_type_variables();
   Ctype.begin_def();
   let types = List.map (transl_closed_type env) excdecl in
   Ctype.end_def();
   List.iter Ctype.generalize types;
-  types
+  { exn_args = types;
+    exn_loc = loc }
 
 (* Translate an exception rebinding *)
 let transl_exn_rebind env loc lid =
@@ -841,8 +849,10 @@ let transl_exn_rebind env loc lid =
       Env.lookup_constructor lid env
     with Not_found ->
       raise(Error(loc, Unbound_exception lid)) in
+  Env.mark_constructor `Positive env (Longident.last lid) cdescr;
   match cdescr.cstr_tag with
-    Cstr_exception path -> (path, cdescr.cstr_args)
+    Cstr_exception (path, _) ->
+      (path, {exn_args = cdescr.cstr_args; exn_loc = loc})
   | _ -> raise(Error(loc, Not_an_exception lid))
 
 (* Translate a value declaration *)

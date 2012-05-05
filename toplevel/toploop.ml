@@ -218,8 +218,10 @@ let execute_phrase print_outcome ppf phr =
   | Ptop_def sstr ->
       let oldenv = !toplevel_env in
       Typecore.reset_delayed_checks ();
-      let (str, sg, newenv) = Typemod.type_structure oldenv sstr Location.none
-      in
+      let (str, sg, newenv) =
+        Typemod.type_structure oldenv sstr Location.none in
+      let _ =
+        Includemod.compunit "//toplevel//" sg "(inferred signature)" sg in
       Typecore.force_delayed_checks ();
       let lam = Translmod.transl_toplevel_definition str in
       Warnings.check_fatal ();
@@ -423,6 +425,7 @@ let loop ppf =
       first_line := true;
       let phr = try !parse_toplevel_phrase lb with Exit -> raise PPerror in
       if !Clflags.dump_parsetree then Printast.top_phrase ppf phr;
+      Env.reset_missing_cmis ();
       ignore(execute_phrase true ppf phr)
     with
     | End_of_file -> exit 0
