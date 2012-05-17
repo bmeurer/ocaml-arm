@@ -161,6 +161,21 @@ let emit_call_bound_error bd =
   `{emit_label bd.bd_lbl}:	{emit_call "caml_ml_array_bound_error"}\n`;
   `{emit_label bd.bd_frame_lbl}:\n`
 
+(* Record information about emitted functions *)
+
+type function_info =
+  { fi_tailrec_lbl: label;
+    fi_contains_calls: bool;
+    fi_frame_size: int }
+
+let function_infos = ref([] : (string * function_info) list)
+
+let record_function name =
+  let fi = { fi_tailrec_lbl = new_label();
+             fi_contains_calls = !contains_calls;
+             fi_frame_size = frame_size() } in
+  function_infos := (name, fi) :: !function_infos; fi
+
 (* Negate a comparison *)
 
 let negate_integer_comparison = function
@@ -260,16 +275,12 @@ let output_epilogue f =
   if n > 0 then begin
     let ninstr = emit_stack_adjustment n in
     let ninstr = ninstr + f () in
-    (* reset CFA back cause function body may continue *)
+    (* Reset CFA because function body may continue *)
     cfi_adjust_cfa_offset n;
     ninstr
   end else
     f ()
 
-(* Name of current function *)
-let function_name = ref ""
-(* Entry point for tail recursive calls *)
-let tailrec_entry_point = ref 0
 (* Pending floating-point literals *)
 let float_literals = ref ([] : (string * label) list)
 (* Pending relative references to the global offset table *)
@@ -447,9 +458,26 @@ let emit_instr i =
           `	bx	{emit_reg i.arg.(0)}\n`; 2
         end
     | Lop(Itailcall_imm s) ->
-        if s = !function_name then begin
-          `	b	{emit_label !tailrec_entry_point}\n`; 1
-        end else begin
+        begin try
+          let fi = List.assoc s !function_infos in
+          let sz = frame_size() in
+          if sz = 0 || !Clflags.gprofile then
+            raise Not_found (* Fallback to regular stack frame deconstruction *)
+          else begin
+            (* Adjust frame size for tailrec function entry *)
+            let n = sz - fi.fi_frame_size in
+            let ninstr = emit_stack_adjustment n in
+            (* Reload link register on-demand *)
+            if !contains_calls && not fi.fi_contains_calls then
+              `	ldr	lr, [sp, #{emit_int (fi.fi_frame_size - 4)}]\n`;
+            (* Tailcall to tailrec function entry *)
+            `	b	{emit_label fi.fi_tailrec_lbl} @ {emit_symbol s}\n`;
+            (* Reset CFA because function body may continue *)
+            if n <> 0 then cfi_adjust_cfa_offset n;
+            2 + ninstr
+          end
+        with Not_found ->
+          (* Regular stack frame deconstruction *)
           output_epilogue begin fun () ->
             if !contains_calls then
               `	ldr	lr, [sp, #{emit_int (-4)}]\n`;
@@ -828,15 +856,14 @@ let emit_profile() =
 (* Emission of a function declaration *)
 
 let fundecl fundecl =
-  function_name := fundecl.fun_name;
   fastcode_flag := fundecl.fun_fast;
-  tailrec_entry_point := new_label();
   float_literals := [];
   gotrel_literals := [];
   symbol_literals := [];
   stack_offset := 0;
   call_gc_sites := [];
   bound_error_sites := [];
+  let fi = record_function fundecl.fun_name in
   `	.text\n`;
   `	.align	2\n`;
   `	.globl	{emit_symbol fundecl.fun_name}\n`;
@@ -849,13 +876,12 @@ let fundecl fundecl =
   emit_debug_info fundecl.fun_dbg;
   cfi_startproc();
   if !Clflags.gprofile then emit_profile();
-  let n = frame_size() in
-  if n > 0 then begin
-    ignore(emit_stack_adjustment (-n));
+  if fi.fi_frame_size > 0 then begin
+    ignore(emit_stack_adjustment (-fi.fi_frame_size));
     if !contains_calls then
-      `	str	lr, [sp, #{emit_int(n - 4)}]\n`
+      `	str	lr, [sp, #{emit_int(fi.fi_frame_size - 4)}]\n`
   end;
-  `{emit_label !tailrec_entry_point}:\n`;
+  `{emit_label fi.fi_tailrec_lbl}:\n`;
   emit_all 0 fundecl.fun_body;
   emit_literals();
   List.iter emit_call_gc !call_gc_sites;
@@ -890,6 +916,7 @@ let data l =
 
 let begin_assembly() =
   reset_debug_info();
+  function_infos := [];
   `	.syntax	unified\n`;
   begin match !arch with
   | ARMv4   -> `	.arch	armv4t\n`
