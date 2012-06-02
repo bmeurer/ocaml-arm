@@ -71,11 +71,11 @@ debugger_config.cmx : int64ops.cmx debugger_config.cmi
 dynlink.cmo : ../bytecomp/symtable.cmi ../bytecomp/opcodes.cmo \
     ../utils/misc.cmi ../bytecomp/meta.cmi ../bytecomp/dll.cmi \
     ../utils/consistbl.cmi ../utils/config.cmi ../bytecomp/cmo_format.cmi \
-    dynlink.cmi
+    ../typing/cmi_format.cmi dynlink.cmi
 dynlink.cmx : ../bytecomp/symtable.cmx ../bytecomp/opcodes.cmx \
     ../utils/misc.cmx ../bytecomp/meta.cmx ../bytecomp/dll.cmx \
     ../utils/consistbl.cmx ../utils/config.cmx ../bytecomp/cmo_format.cmi \
-    dynlink.cmi
+    ../typing/cmi_format.cmx dynlink.cmi
 envaux.cmo : ../typing/types.cmi ../typing/subst.cmi ../typing/printtyp.cmi \
     ../typing/path.cmi ../typing/mtype.cmi ../utils/misc.cmi \
     ../bytecomp/instruct.cmi ../typing/env.cmi envaux.cmi
@@ -126,12 +126,14 @@ main.cmo : unix_tools.cmi $(UNIXDIR)/unix.cmi time_travel.cmi \
     show_information.cmi question.cmi program_management.cmi primitives.cmi \
     parameters.cmi ../utils/misc.cmi input_handling.cmi frames.cmi exec.cmi \
     ../typing/env.cmi debugger_config.cmi ../utils/config.cmi \
-    command_line.cmi ../utils/clflags.cmi checkpoints.cmi
+    command_line.cmi ../typing/cmi_format.cmi ../utils/clflags.cmi \
+    checkpoints.cmi
 main.cmx : unix_tools.cmx $(UNIXDIR)/unix.cmx time_travel.cmx \
     show_information.cmx question.cmx program_management.cmx primitives.cmx \
     parameters.cmx ../utils/misc.cmx input_handling.cmx frames.cmx exec.cmx \
     ../typing/env.cmx debugger_config.cmx ../utils/config.cmx \
-    command_line.cmx ../utils/clflags.cmx checkpoints.cmx
+    command_line.cmx ../typing/cmi_format.cmx ../utils/clflags.cmx \
+    checkpoints.cmx
 parameters.cmo : primitives.cmi envaux.cmi debugger_config.cmi \
     ../utils/config.cmi parameters.cmi
 parameters.cmx : primitives.cmx envaux.cmx debugger_config.cmx \
