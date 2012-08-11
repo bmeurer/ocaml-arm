@@ -854,11 +854,12 @@ let fundecl fundecl =
   `	.text\n`;
   `	.align	2\n`;
   `	.globl	{emit_symbol fundecl.fun_name}\n`;
-  if !arch > ARMv6 && !thumb then
-    `	.thumb\n`
-  else
-    `	.arm\n`;
-  `	.type	{emit_symbol fundecl.fun_name}, %function\n`;
+  if !arch > ARMv6 && !thumb then begin
+    `	.thumb\n`;
+    `	.thumb_func	{emit_symbol fundecl.fun_name}\n`
+  end else begin
+    `	.arm\n`
+  end;
   `{emit_symbol fundecl.fun_name}:\n`;
   emit_debug_info fundecl.fun_dbg;
   cfi_startproc();
@@ -875,8 +876,11 @@ let fundecl fundecl =
   List.iter emit_call_gc !call_gc_sites;
   List.iter emit_call_bound_error !bound_error_sites;
   cfi_endproc();
-  `	.type	{emit_symbol fundecl.fun_name}, %function\n`;
-  `	.size	{emit_symbol fundecl.fun_name}, .-{emit_symbol fundecl.fun_name}\n`
+  begin match Config.system with
+    "linux_eabi" | "linux_eabihf" ->
+      `	.type	{emit_symbol fundecl.fun_name},%function\n`;
+      `	.size	{emit_symbol fundecl.fun_name},.-{emit_symbol fundecl.fun_name}\n`
+  | _ -> () end
 
 (* Emission of data *)
 
