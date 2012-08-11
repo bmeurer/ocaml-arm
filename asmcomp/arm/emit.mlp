@@ -757,6 +757,8 @@ let emit_instr i =
              that appear before this switch instruction (PR#5623) *)
           let tramtbl = Array.copy jumptbl in
           `	tbh	[pc, {emit_reg i.arg.(0)}, lsl #1]\n`;
+          let lbl = new_label() in
+          `{emit_label lbl}:`;
           for j = 0 to Array.length tramtbl - 1 do
             let rec label i =
               match i.desc with
@@ -764,7 +766,7 @@ let emit_instr i =
               | Llabel lbl when lbl = tramtbl.(j) -> lbl
               | _ -> label i.next in
             tramtbl.(j) <- label i.next;
-            `	.short	({emit_label tramtbl.(j)}-.)/2+{emit_int j}\n`
+            `	.short	({emit_label tramtbl.(j)}-{emit_label lbl})/2\n`
           done;
           (* Generate the necessary trampolines *)
           for j = 0 to Array.length tramtbl - 1 do
