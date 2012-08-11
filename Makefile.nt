@@ -218,6 +218,7 @@ installbyt:
 	cp utils/*.cmi parsing/*.cmi typing/*.cmi bytecomp/*.cmi driver/*.cmi toplevel/*.cmi $(COMPLIBDIR)
 	cp compilerlibs/ocamlcommon.cma compilerlibs/ocamlbytecomp.cma compilerlibs/ocamltoplevel.cma $(BYTESTART) $(TOPLEVELSTART) $(COMPLIBDIR)
 	cp expunge $(LIBDIR)/expunge.exe
+	cp toplevel/topdirs.cmi $(LIBDIR)
 	cd tools ; $(MAKEREC) install
 	cd ocamldoc ; $(MAKEREC) install
 	mkdir -p $(STUBLIBDIR)
@@ -246,9 +247,9 @@ installoptopt:
 	cp ocamlc.opt $(BINDIR)/ocamlc.opt$(EXE)
 	cp ocamlopt.opt $(BINDIR)/ocamlopt.opt$(EXE)
 	cp lex/ocamllex.opt $(BINDIR)/ocamllex.opt$(EXE)
-	cp compilerlibs/ocamlcommon.cmxa compilerlibs/ocamlcommon.a \
-	 compilerlibs/ocamlbytecomp.cmxa compilerlibs/ocamlbytecomp.a \
-	 compilerlibs/ocamloptcomp.cmxa compilerlibs/ocamloptcomp.a \
+	cp compilerlibs/ocamlcommon.cmxa compilerlibs/ocamlcommon.$(A) \
+	 compilerlibs/ocamlbytecomp.cmxa compilerlibs/ocamlbytecomp.$(A) \
+	 compilerlibs/ocamloptcomp.cmxa compilerlibs/ocamloptcomp.$(A) \
 	 $(COMPLIBDIR)
 
 clean:: partialclean
@@ -319,7 +320,7 @@ ocamlnat: ocamlopt otherlibs/dynlink/dynlink.cmxa $(NATTOPOBJS:.cmo=.cmx)
 toplevel/opttoploop.cmx: otherlibs/dynlink/dynlink.cmxa
 
 otherlibs/dynlink/dynlink.cmxa: otherlibs/dynlink/natdynlink.ml
-	cd otherlibs/dynlink && make allopt
+	cd otherlibs/dynlink && $(MAKE) allopt
 
 
 # The configuration file
@@ -386,14 +387,14 @@ beforedepend:: parsing/lexer.ml
 compilerlibs/ocamlcommon.cmxa: $(COMMON:.cmo=.cmx)
 	$(CAMLOPT) -a -o $@ $(COMMON:.cmo=.cmx)
 partialclean::
-	rm -f compilerlibs/ocamlcommon.cmxa compilerlibs/ocamlcommon.a
+	rm -f compilerlibs/ocamlcommon.cmxa compilerlibs/ocamlcommon.$(A)
 
 # The bytecode compiler compiled with the native-code compiler
 
 compilerlibs/ocamlbytecomp.cmxa: $(BYTECOMP:.cmo=.cmx)
 	$(CAMLOPT) -a -o $@ $(BYTECOMP:.cmo=.cmx)
 partialclean::
-	rm -f compilerlibs/ocamlbytecomp.cmxa compilerlibs/ocamlbytecomp.a
+	rm -f compilerlibs/ocamlbytecomp.cmxa compilerlibs/ocamlbytecomp.$(A)
 
 ocamlc.opt: compilerlibs/ocamlcommon.cmxa compilerlibs/ocamlbytecomp.cmxa $(BYTESTART:.cmo=.cmx)
 	$(CAMLOPT) $(LINKFLAGS) -ccopt "$(BYTECCLINKOPTS)" -o ocamlc.opt \
@@ -411,7 +412,7 @@ partialclean::
 compilerlibs/ocamloptcomp.cmxa: $(ASMCOMP:.cmo=.cmx)
 	$(CAMLOPT) -a -o $@ $(ASMCOMP:.cmo=.cmx)
 partialclean::
-	rm -f compilerlibs/ocamloptcomp.cmxa compilerlibs/ocamloptcomp.a
+	rm -f compilerlibs/ocamloptcomp.cmxa compilerlibs/ocamloptcomp.$(A)
 
 ocamlopt.opt: compilerlibs/ocamlcommon.cmxa compilerlibs/ocamloptcomp.cmxa $(OPTSTART:.cmo=.cmx)
 	$(CAMLOPT) $(LINKFLAGS) -o ocamlopt.opt \

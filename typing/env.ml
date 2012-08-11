@@ -171,7 +171,7 @@ and structure_components = {
   mutable comp_annotations: (string, (Annot.ident * int)) Tbl.t;
   mutable comp_constrs: (string, (constructor_description * int)) Tbl.t;
   mutable comp_labels: (string, (label_description * int)) Tbl.t;
-  mutable comp_constrs_by_path: 
+  mutable comp_constrs_by_path:
       (string, (constructor_description list * int)) Tbl.t;
   mutable comp_types: (string, (type_declaration * int)) Tbl.t;
   mutable comp_modules:
@@ -195,11 +195,11 @@ let subst_modtype_maker (subst, mty) = Subst.modtype subst mty
 
 let empty = {
   values = EnvTbl.empty; annotations = EnvTbl.empty; constrs = EnvTbl.empty;
-  labels = EnvTbl.empty; types = EnvTbl.empty; 
+  labels = EnvTbl.empty; types = EnvTbl.empty;
   constrs_by_path = EnvTbl.empty;
   modules = EnvTbl.empty; modtypes = EnvTbl.empty;
   components = EnvTbl.empty; classes = EnvTbl.empty;
-  cltypes = EnvTbl.empty; 
+  cltypes = EnvTbl.empty;
   summary = Env_empty; local_constraints = false; gadt_instances = [];
   in_signature = false;
  }
@@ -730,7 +730,7 @@ let rec scrape_modtype mty env =
 (* Compute constructor descriptions *)
 
 let constructors_of_type ty_path decl =
-  let handle_variants cstrs = 
+  let handle_variants cstrs =
     Datarepr.constructor_descrs
       (newgenty (Tconstr(ty_path, decl.type_params, ref Mnil)))
       cstrs decl.type_private
@@ -798,7 +798,7 @@ and components_of_module_maker (env, sub, path, mty) =
     Mty_signature sg ->
       let c =
         { comp_values = Tbl.empty; comp_annotations = Tbl.empty;
-          comp_constrs = Tbl.empty; 
+          comp_constrs = Tbl.empty;
           comp_labels = Tbl.empty; comp_types = Tbl.empty;
           comp_constrs_by_path = Tbl.empty;
           comp_modules = Tbl.empty; comp_modtypes = Tbl.empty;
@@ -825,16 +825,16 @@ and components_of_module_maker (env, sub, path, mty) =
             let decl' = Subst.type_declaration sub decl in
             c.comp_types <-
               Tbl.add (Ident.name id) (decl', nopos) c.comp_types;
-	    let constructors = constructors_of_type path decl' in
-	    c.comp_constrs_by_path <-
-	      Tbl.add (Ident.name id) 
-		(List.map snd constructors, nopos) c.comp_constrs_by_path;
+            let constructors = constructors_of_type path decl' in
+            c.comp_constrs_by_path <-
+              Tbl.add (Ident.name id)
+                (List.map snd constructors, nopos) c.comp_constrs_by_path;
             List.iter
               (fun (name, descr) ->
                 c.comp_constrs <-
                   Tbl.add (Ident.name name) (descr, nopos) c.comp_constrs)
               constructors;
-	    let labels = labels_of_type path decl' in
+            let labels = labels_of_type path decl' in
             List.iter
               (fun (name, descr) ->
                 c.comp_labels <-
@@ -886,8 +886,8 @@ and components_of_module_maker (env, sub, path, mty) =
   | Mty_ident p ->
         Structure_comps {
           comp_values = Tbl.empty; comp_annotations = Tbl.empty;
-          comp_constrs = Tbl.empty; 
-          comp_labels = Tbl.empty; 
+          comp_constrs = Tbl.empty;
+          comp_labels = Tbl.empty;
           comp_types = Tbl.empty; comp_constrs_by_path = Tbl.empty;
           comp_modules = Tbl.empty; comp_modtypes = Tbl.empty;
           comp_components = Tbl.empty; comp_classes = Tbl.empty;
@@ -927,7 +927,7 @@ and store_type id path info env =
   let constructors = constructors_of_type path info in
   let labels = labels_of_type path info in
 
-  if not env.in_signature && not loc.Location.loc_ghost &&
+  if not loc.Location.loc_ghost &&
     Warnings.is_active (Warnings.Unused_constructor ("", false, false))
   then begin
     let ty = Ident.name id in
@@ -941,7 +941,7 @@ and store_type id path info env =
           if not (ty = "" || ty.[0] = '_')
           then !add_delayed_check_forward
               (fun () ->
-                if not used.cu_positive then
+                if not env.in_signature && not used.cu_positive then
                   Location.prerr_warning loc
                     (Warnings.Unused_constructor
                        (c, used.cu_pattern, used.cu_privatize)))
@@ -956,8 +956,8 @@ and store_type id path info env =
         constructors
         env.constrs;
 
-    constrs_by_path = 
-      EnvTbl.add id 
+    constrs_by_path =
+      EnvTbl.add id
         (path,List.map snd constructors) env.constrs_by_path;
     labels =
       List.fold_right
@@ -980,7 +980,7 @@ and store_type_infos id path info env =
 
 and store_exception id path decl env =
   let loc = decl.exn_loc in
-  if not env.in_signature && not loc.Location.loc_ghost &&
+  if not loc.Location.loc_ghost &&
     Warnings.is_active (Warnings.Unused_exception ("", false))
   then begin
     let ty = "exn" in
@@ -991,7 +991,7 @@ and store_exception id path decl env =
       Hashtbl.add used_constructors k (add_constructor_usage used);
       !add_delayed_check_forward
         (fun () ->
-          if not used.cu_positive then
+          if not env.in_signature && not used.cu_positive then
             Location.prerr_warning loc
               (Warnings.Unused_exception
                  (c, used.cu_pattern)
@@ -1303,6 +1303,19 @@ let initial = Predef.build_initial_env add_type add_exception empty
 (* Return the environment summary *)
 
 let summary env = env.summary
+let keep_only_summary env =
+  { empty with
+    summary = env.summary;
+    local_constraints = env.local_constraints;
+    in_signature = env.in_signature;
+}
+
+let env_of_only_summary env_from_summary env =
+  let new_env = env_from_summary env.summary Subst.identity in
+  { new_env with
+    local_constraints = env.local_constraints;
+    in_signature = env.in_signature;
+  }
 
 (* Error report *)
 

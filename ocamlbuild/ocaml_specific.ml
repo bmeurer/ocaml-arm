@@ -382,7 +382,15 @@ flag ["ocaml"; "compile"] begin
   atomize !Options.ocaml_cflags
 end;;
 
+flag ["c"; "compile"] begin
+  atomize !Options.ocaml_cflags
+end;;
+
 flag ["ocaml"; "link"] begin
+  atomize !Options.ocaml_lflags
+end;;
+
+flag ["c"; "link"] begin
   atomize !Options.ocaml_lflags
 end;;
 
@@ -466,7 +474,7 @@ let () =
     (fun param -> S [A "-pp"; A param]);
   pflag ["ocaml"; "infer_interface"] "pp"
     (fun param -> S [A "-pp"; A param]);
-  pflag ["ocaml";"compile";] "warn" 
+  pflag ["ocaml";"compile";] "warn"
     (fun param -> S [A "-w"; A param])
 
 let camlp4_flags camlp4s =

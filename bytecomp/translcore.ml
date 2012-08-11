@@ -484,18 +484,19 @@ let rec push_defaults loc bindings pat_expr_list partial =
       [pat, exp]
   | (pat, exp) :: _ when bindings <> [] ->
       let param = name_pattern "param" pat_expr_list in
+      let name = Ident.name param in
       let exp =
         { exp with exp_loc = loc; exp_desc =
           Texp_match
             ({exp with exp_type = pat.pat_type; exp_desc =
-              Texp_ident (Path.Pident param, mknoloc (Longident.Lident "param"),
+              Texp_ident (Path.Pident param, mknoloc (Longident.Lident name),
                           {val_type = pat.pat_type; val_kind = Val_reg;
                            Types.val_loc = Location.none;
                           })},
              pat_expr_list, partial) }
       in
       push_defaults loc bindings
-        [{pat with pat_desc = Tpat_var (param, mknoloc "param")}, exp] Total
+        [{pat with pat_desc = Tpat_var (param, mknoloc name)}, exp] Total
   | _ ->
       pat_expr_list
 
@@ -833,9 +834,6 @@ and transl_exp0 e =
           cl_loc = e.exp_loc;
           cl_type = Cty_signature cty;
           cl_env = e.exp_env }
-  | Texp_poly (exp, _ )
-  | Texp_newtype (_, exp)
-    -> transl_exp exp
 
 and transl_list expr_list =
   List.map transl_exp expr_list

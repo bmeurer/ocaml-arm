@@ -31,11 +31,12 @@ let none = {
   dinfo_char_end = 0
 }
 
+(* PR#5643: cannot use (==) because Debuginfo values are marshalled *)
 let is_none t =
-  t == none
+  t = none
 
 let to_string d =
-  if d == none
+  if d = none
   then ""
   else Printf.sprintf "{%s:%d,%d-%d}"
            d.dinfo_file d.dinfo_line d.dinfo_char_start d.dinfo_char_end
@@ -53,4 +54,3 @@ let from_location kind loc =
 
 let from_call ev = from_location Dinfo_call ev.Lambda.lev_loc
 let from_raise ev = from_location Dinfo_raise ev.Lambda.lev_loc
-

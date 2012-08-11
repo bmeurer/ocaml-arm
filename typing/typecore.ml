@@ -330,7 +330,7 @@ let finalize_variant pat =
           begin match opat with None -> assert false
           | Some pat -> List.iter (unify_pat pat.pat_env pat) (ty::tl)
           end
-      | Reither (c, l, true, e) when not row.row_fixed ->
+      | Reither (c, l, true, e) when not (row_fixed row) ->
           set_row_field e (Reither (c, [], false, ref None))
       | _ -> ()
       end;
@@ -526,7 +526,7 @@ let rec find_record_qual = function
   | ({ txt = Longident.Ldot (modname, _) }, _) :: _ -> Some modname
   | _ :: rest -> find_record_qual rest
 
-let type_label_a_list ?labels env loc type_lbl_a lid_a_list =
+let type_label_a_list ?labels env type_lbl_a lid_a_list =
   let record_qual = find_record_qual lid_a_list in
   let lbl_a_list =
     List.map
@@ -536,9 +536,9 @@ let type_label_a_list ?labels env loc type_lbl_a lid_a_list =
               Longident.Lident s, Some labels, _ when Hashtbl.mem labels s ->
                 (Hashtbl.find labels s : Path.t * Types.label_description)
             | Longident.Lident s, _, Some modname ->
-              Typetexp.find_label env loc (Longident.Ldot (modname, s))
+              Typetexp.find_label env lid.loc (Longident.Ldot (modname, s))
             | _ ->
-              Typetexp.find_label env loc lid.txt
+              Typetexp.find_label env lid.loc lid.txt
         in (path, lid, label, a)
       )  lid_a_list in
   (* Invariant: records are sorted in the typed tree *)
@@ -764,7 +764,7 @@ let rec type_pat ~constrs ~labels ~no_existentials ~mode ~env sp expected_ty =
         (label_path, label_lid, label, arg)
       in
       let lbl_pat_list =
-        type_label_a_list ?labels !env loc type_label_pat lid_sp_list in
+        type_label_a_list ?labels !env type_label_pat lid_sp_list in
       check_recordpat_labels loc lbl_pat_list closed;
       rp {
         pat_desc = Tpat_record (lbl_pat_list, closed);
@@ -994,9 +994,6 @@ let rec is_nonexpansive exp =
   match exp.exp_desc with
     Texp_ident(_,_,_) -> true
   | Texp_constant _ -> true
-  | Texp_poly (e, _)
-  | Texp_newtype (_, e)
-    -> is_nonexpansive e
   | Texp_let(rec_flag, pat_exp_list, body) ->
       List.for_all (fun (pat, exp) -> is_nonexpansive exp) pat_exp_list &&
       is_nonexpansive body
@@ -1389,7 +1386,7 @@ let self_coercion = ref ([] : (Path.t * Location.t list ref) list)
 let create_package_type loc env (p, l) =
   let s = !Typetexp.transl_modtype_longident loc env p in
   let fields = List.map (fun (name, ct) ->
-			   name, Typetexp.transl_simple_type env false ct) l in
+                           name, Typetexp.transl_simple_type env false ct) l in
   let ty = newty (Tpackage (s,
                     List.map fst l,
                    List.map (fun (_, cty) -> cty.ctyp_type) fields))
@@ -1753,7 +1750,7 @@ and type_expect ?in_function env sexp ty_expected =
       end
   | Pexp_record(lid_sexp_list, opt_sexp) ->
       let lbl_exp_list =
-        type_label_a_list env loc (type_label_exp true env loc ty_expected)
+        type_label_a_list env (type_label_exp true env loc ty_expected)
           lid_sexp_list in
       let rec check_duplicates seen_pos lid_sexp lbl_exp =
         match (lid_sexp, lbl_exp) with
@@ -2038,8 +2035,8 @@ and type_expect ?in_function env sexp ty_expected =
                   let (obj_ty, res_ty) = filter_arrow env method_type "" in
                   unify env obj_ty desc.val_type;
                   unify env res_ty (instance env typ);
-		  let exp =
-		    Texp_apply({exp_desc =
+                  let exp =
+                    Texp_apply({exp_desc =
                                 Texp_ident(Path.Pident method_id, lid,
                                            {val_type = method_type;
                                             val_kind = Val_reg;
@@ -2053,11 +2050,11 @@ and type_expect ?in_function env sexp ty_expected =
                                   exp_type = desc.val_type;
                                   exp_env = env},
                                Required])
-		  in
+                  in
                   (Tmeth_name met, Some (re {exp_desc = exp;
-					     exp_loc = loc; exp_extra = [];
-					     exp_type = typ;
-					     exp_env = env}), typ)
+                                             exp_loc = loc; exp_extra = [];
+                                             exp_type = typ;
+                                             exp_env = env}), typ)
               |  _ ->
                   assert false
               end
@@ -2247,7 +2244,7 @@ and type_expect ?in_function env sexp ty_expected =
         match (expand_head env ty).desc with
           Tpoly (ty', []) ->
             let exp = type_expect env sbody ty' in
-            re { exp with exp_type = instance env ty }
+            { exp with exp_type = instance env ty }
         | Tpoly (ty', tl) ->
             (* One more level to generalize locally *)
             begin_def ();
@@ -2260,16 +2257,19 @@ and type_expect ?in_function env sexp ty_expected =
             let exp = type_expect env sbody ty'' in
             end_def ();
             check_univars env false "method" exp ty_expected vars;
-            re { exp with exp_type = instance env ty }
+            { exp with exp_type = instance env ty }
         | Tvar _ ->
             let exp = type_exp env sbody in
             let exp = {exp with exp_type = newty (Tpoly (exp.exp_type, []))} in
             unify_exp env exp ty;
-            re exp
+            exp
         | _ -> assert false
       in
-      re { exp with exp_desc = Texp_poly(exp, cty) }
+      re { exp with exp_extra = (Texp_poly cty, loc) :: exp.exp_extra }
   | Pexp_newtype(name, sbody) ->
+      let ty = newvar () in
+      (* remember original level *)
+      begin_def ();
       (* Create a fake abstract type declaration for name. *)
       let level = get_current_level () in
       let decl = {
@@ -2283,9 +2283,6 @@ and type_expect ?in_function env sexp ty_expected =
         type_loc = loc;
       }
       in
-      let ty = newvar () in
-      (* remember original level *)
-      begin_def ();
       Ident.set_current_time ty.level;
       let (id, new_env) = Env.enter_type name decl env in
       Ctype.init_def(Ident.current_time());
@@ -2312,7 +2309,8 @@ and type_expect ?in_function env sexp ty_expected =
 
       (* non-expansive if the body is non-expansive, so we don't introduce
          any new extra node in the typed AST. *)
-      rue { body with exp_loc = sexp.pexp_loc; exp_type = ety }
+      rue { body with exp_loc = loc; exp_type = ety;
+            exp_extra = (Texp_newtype name, loc) :: body.exp_extra }
   | Pexp_pack m ->
       let (p, nl, tl) =
         match Ctype.expand_head env (instance env ty_expected) with
@@ -2357,7 +2355,7 @@ and type_label_exp create env loc ty_expected
   begin try
     unify env (instance_def ty_res) (instance env ty_expected)
   with Unify trace ->
-    raise(Error(loc , Label_mismatch(lid_of_label label, trace)))
+    raise (Error(lid.loc, Label_mismatch(lid_of_label label, trace)))
   end;
   (* Instantiate so that we can generalize internal nodes *)
   let ty_arg = instance_def ty_arg in
@@ -2367,8 +2365,10 @@ and type_label_exp create env loc ty_expected
     generalize_structure ty_arg
   end;
   if label.lbl_private = Private then
-    raise(Error(loc, if create then Private_type ty_expected
-                     else Private_label (lid_of_label label, ty_expected)));
+    if create then
+      raise (Error(loc, Private_type ty_expected))
+    else
+      raise (Error(lid.loc, Private_label(lid_of_label label, ty_expected)));
   let arg =
     let snap = if vars = [] then None else Some (Btype.snapshot ()) in
     let arg = type_argument env sarg ty_arg (instance env ty_arg) in
@@ -3211,4 +3211,3 @@ let report_error ppf = function
 
 let () =
   Env.add_delayed_check_forward := add_delayed_check
-

@@ -2165,14 +2165,15 @@ and unify3 env t1 t1' t2 t2' =
   | (Tfield _, Tfield _) -> (* special case for GADTs *)
       unify_fields env t1' t2'
   | _ ->
-      begin match !umode with
-      | Expression ->
-          occur !env t1' t2';
-          link_type t1' t2
-      | Pattern ->
-          add_type_equality t1' t2'
-      end;
-      try match (d1, d2) with
+    begin match !umode with
+    | Expression ->
+        occur !env t1' t2';
+        link_type t1' t2
+    | Pattern ->
+        add_type_equality t1' t2'
+    end;
+    try
+      begin match (d1, d2) with
         (Tarrow (l1, t1, u1, c1), Tarrow (l2, t2, u2, c2)) when l1 = l2 ||
         !Clflags.classic && not (is_optional l1 || is_optional l2) ->
           unify  env t1 t2; unify env  u1 u2;
@@ -2246,20 +2247,20 @@ and unify3 env t1 t1' t2 t2' =
           unify_list env tl1 tl2
       | (_, _) ->
           raise (Unify [])
-      with Unify trace ->
-        t1'.desc <- d1;
-        raise (Unify trace)
-  end;
-  (* XXX Commentaires + changer "create_recursion" *)
-  if create_recursion then begin
-    match t2.desc with
-      Tconstr (p, tl, abbrev) ->
-        forget_abbrev abbrev p;
-        let t2'' = expand_head_unif !env t2 in
-        if not (closed_parameterized_type tl t2'') then
-          link_type (repr t2) (repr t2')
-    | _ ->
-        () (* t2 has already been expanded by update_level *)
+      end;
+      (* XXX Commentaires + changer "create_recursion" *)
+      if create_recursion then
+        match t2.desc with
+          Tconstr (p, tl, abbrev) ->
+            forget_abbrev abbrev p;
+            let t2'' = expand_head_unif !env t2 in
+            if not (closed_parameterized_type tl t2'') then
+              link_type (repr t2) (repr t2')
+        | _ ->
+            () (* t2 has already been expanded by update_level *)
+    with Unify trace ->
+      t1'.desc <- d1;
+      raise (Unify trace)
   end
 
 and unify_list env tl1 tl2 =
@@ -2339,11 +2340,12 @@ and unify_row env row1 row2 =
         with Not_found -> ())
       r2
   end;
+  let fixed1 = row_fixed row1 and fixed2 = row_fixed row2 in
   let more =
-    if row1.row_fixed then rm1 else
-    if row2.row_fixed then rm2 else
+    if fixed1 then rm1 else
+    if fixed2 then rm2 else
     newty2 (min rm1.level rm2.level) (Tvar None) in
-  let fixed = row1.row_fixed || row2.row_fixed
+  let fixed = fixed1 || fixed2
   and closed = row1.row_closed || row2.row_closed in
   let keep switch =
     List.for_all
@@ -2377,8 +2379,8 @@ and unify_row env row1 row2 =
       if closed then
         filter_row_fields row.row_closed rest
       else rest in
-    if rest <> [] && (row.row_closed || row.row_fixed)
-    || closed && row.row_fixed && not row.row_closed then begin
+    if rest <> [] && (row.row_closed || row_fixed row)
+    || closed && row_fixed row && not row.row_closed then begin
       let t1 = mkvariant [] true and t2 = mkvariant rest false in
       raise (Unify [if row == row1 then (t1,t2) else (t2,t1)])
     end;
@@ -2387,7 +2389,7 @@ and unify_row env row1 row2 =
     if !trace_gadt_instances && rm.desc = Tnil then () else
     if !trace_gadt_instances then
       update_level !env rm.level (newgenty (Tvariant row));
-    if row.row_fixed then
+    if row_fixed row then
       if more == rm then () else
       if is_Tvar rm then link_type rm more else unify env rm more
     else
@@ -2401,7 +2403,7 @@ and unify_row env row1 row2 =
     set_more row1 r2;
     List.iter
       (fun (l,f1,f2) ->
-        try unify_row_field env row1.row_fixed row2.row_fixed more l f1 f2
+        try unify_row_field env fixed1 fixed2 more l f1 f2
         with Unify trace ->
           raise (Unify ((mkvariant [l,f1] true,
                          mkvariant [l,f2] true) :: trace)))
@@ -2419,7 +2421,7 @@ and unify_row_field env fixed1 fixed2 more l f1 f2 =
   | Reither(c1, tl1, m1, e1), Reither(c2, tl2, m2, e2) ->
       if e1 == e2 then () else
       let redo =
-        (m1 || m2 ||
+        (m1 || m2 || fixed1 || fixed2 ||
          !rigid_variants && (List.length tl1 = 1 || List.length tl2 = 1)) &&
         begin match tl1 @ tl2 with [] -> false
         | t1 :: tl ->
@@ -2440,8 +2442,8 @@ and unify_row_field env fixed1 fixed2 more l f1 f2 =
       let f1' = Reither(c1 || c2, tl1', m1 || m2, e)
       and f2' = Reither(c1 || c2, tl2', m1 || m2, e) in
       set_row_field e1 f1'; set_row_field e2 f2';
-  | Reither(_, _, false, e1), Rabsent -> set_row_field e1 f2
-  | Rabsent, Reither(_, _, false, e2) -> set_row_field e2 f1
+  | Reither(_, _, false, e1), Rabsent when not fixed1 -> set_row_field e1 f2
+  | Rabsent, Reither(_, _, false, e2) when not fixed2 -> set_row_field e2 f1
   | Rabsent, Rabsent -> ()
   | Reither(false, tl, _, e1), Rpresent(Some t2) when not fixed1 ->
       set_row_field e1 f2;
@@ -2834,7 +2836,7 @@ let rec rigidify_rec vars ty =
     | Tvariant row ->
         let row = row_repr row in
         let more = repr row.row_more in
-        if is_Tvar more && not row.row_fixed then begin
+        if is_Tvar more && not (row_fixed row) then begin
           let more' = newty2 more.level more.desc in
           let row' = {row with row_fixed=true; row_fields=[]; row_more=more'}
           in link_type more (newty2 ty.level (Tvariant row'))

@@ -126,6 +126,14 @@ let rec row_more row =
   | {desc=Tvariant row'} -> row_more row'
   | ty -> ty
 
+let row_fixed row =
+  let row = row_repr row in
+  row.row_fixed ||
+  match (repr row.row_more).desc with
+    Tvar _ | Tnil -> false
+  | Tunivar _ | Tconstr _ -> true
+  | _ -> assert false
+
 let static_row row =
   let row = row_repr row in
   row.row_closed &&
@@ -332,11 +340,11 @@ let unmark_type_decl decl =
   begin match decl.type_kind with
     Type_abstract -> ()
   | Type_variant cstrs ->
-      List.iter 
-	(fun (c, tl, ret_type_opt) -> 
-	  List.iter unmark_type tl;
-	  Misc.may unmark_type ret_type_opt)
-	cstrs
+      List.iter
+        (fun (c, tl, ret_type_opt) ->
+          List.iter unmark_type tl;
+          Misc.may unmark_type ret_type_opt)
+        cstrs
   | Type_record(lbls, rep) ->
       List.iter (fun (c, mut, t) -> unmark_type t) lbls
   end;
