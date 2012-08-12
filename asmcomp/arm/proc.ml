@@ -31,7 +31,8 @@ let word_addressed = false
     r0 - r3               general purpose (not preserved)
     r4 - r7               general purpose (preserved)
     r8                    trap pointer (preserved)
-    r9                    platform register, usually reserved
+    r9                    EABI: platform register (reserved)
+                          IOS3: general purpose (not preserved)
     r10                   allocation pointer (preserved)
     r11                   allocation limit (preserved)
     r12                   intra-procedural scratch register (not preserved)
@@ -45,7 +46,7 @@ let word_addressed = false
 *)
 
 let int_reg_name =
-  [| "r0"; "r1"; "r2"; "r3"; "r4"; "r5"; "r6"; "r7"; "r12" |]
+  [| "r0"; "r1"; "r2"; "r3"; "r4"; "r5"; "r6"; "r7"; "r12"; "r9" |]
 
 let float_reg_name =
   [| "d0";  "d1";  "d2";  "d3";  "d4";  "d5";  "d6";  "d7";
@@ -70,7 +71,7 @@ let register_class r =
   | Float, _         -> 2
 
 let num_available_registers =
-  [| 9; 16; 32 |]
+  [| (if abi = IOS3 then 10 else 9); 16; 32 |]
 
 let first_available_register =
   [| 0; 100; 100 |]
@@ -83,8 +84,8 @@ let rotate_registers = true
 (* Representation of hard registers by pseudo-registers *)
 
 let hard_int_reg =
-  let v = Array.create 9 Reg.dummy in
-  for i = 0 to 8 do
+  let v = Array.create num_available_registers.(0) Reg.dummy in
+  for i = 0 to Array.length v - 1 do
     v.(i) <- Reg.at_location Int (Reg i)
   done;
   v
@@ -135,7 +136,7 @@ let calling_conventions
           ofs := !ofs + size_float
         end
   done;
-  (loc, Misc.align !ofs 8)  (* keep stack 8-aligned *)
+  (loc, Misc.align !ofs stack_alignment)  (* keep stack alignment *)
 
 let incoming ofs = Incoming ofs
 let outgoing ofs = Outgoing ofs
@@ -169,28 +170,26 @@ let loc_exn_bucket = phys_reg 0
 
 (* Registers destroyed by operations *)
 
+let all_phys_regs_except regs =
+  Array.of_list (List.filter
+                   (function
+                      {loc = Reg reg} -> not (List.mem reg regs)
+                    | _ -> false)
+                   (Array.to_list all_phys_regs))
+
 let destroyed_at_alloc =            (* r0-r6, d0-d15 preserved *)
-  Array.of_list (List.map
-                   phys_reg
-                   [7;8;
-                    116;116;118;119;120;121;122;123;
-                    124;125;126;127;128;129;130;131])
+  all_phys_regs_except [0;1;2;3;4;5;6;
+                        100;101;102;103;104;105;106;107;
+                        108;109;110;111;112;113;114;115]
 
 let destroyed_at_c_call =
-  Array.of_list (List.map
-                   phys_reg
-                   (match abi with
-                      EABI ->       (* r4-r7 preserved *)
-                        [0;1;2;3;8;
-                         100;101;102;103;104;105;106;107;
-                         108;109;110;111;112;113;114;115;
-                         116;116;118;119;120;121;122;123;
-                         124;125;126;127;128;129;130;131]
-                    | EABI_VFP ->   (* r4-r7, d8-d15 preserved *)
-                        [0;1;2;3;8;
-                         100;101;102;103;104;105;106;107;
-                         116;116;118;119;120;121;122;123;
-                         124;125;126;127;128;129;130;131]))
+  all_phys_regs_except (match abi with
+                          EABI ->   (* r4-r7 preserved *)
+                            [4;5;6;7]
+                        | EABI_VFP
+                        | IOS3 ->   (* r4-r7, d8-d15 preserved *)
+                            [4;5;6;7;
+                             108;109;110;111;112;113;114;115])
 
 let destroyed_at_oper = function
     Iop(Icall_ind | Icall_imm _ )
@@ -216,7 +215,7 @@ let safe_register_pressure = function
 
 let max_register_pressure = function
     Iextcall(_, _) -> [| 5; 9; 9 |]
-  | _ -> [| 9; 16; 32 |]
+  | _ -> num_available_registers
 
 (* Layout of the stack *)
 

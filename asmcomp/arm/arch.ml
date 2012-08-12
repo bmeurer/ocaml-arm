@@ -18,7 +18,7 @@
 open Misc
 open Format
 
-type abi = EABI | EABI_VFP
+type abi = EABI | EABI_VFP | IOS3
 type arch = ARMv4 | ARMv5 | ARMv5TE | ARMv6 | ARMv6T2 | ARMv7
 type fpu = Soft | VFPv3_D16 | VFPv3
 
@@ -26,7 +26,8 @@ let abi =
   match Config.system with
     "linux_eabi"   -> EABI
   | "linux_eabihf" -> EABI_VFP
-  | _ -> assert false
+  | "macosx"       -> IOS3
+  | _              -> assert false
 
 let string_of_arch = function
     ARMv4   -> "armv4"
@@ -54,6 +55,8 @@ let (arch, fpu, thumb) =
     | EABI, "armv7"   -> ARMv7,   Soft,      false
     | EABI, _         -> ARMv4,   Soft,      false
     | EABI_VFP, _     -> ARMv7,   VFPv3_D16, true
+    | IOS3, "armv7"   -> ARMv7,   VFPv3,     true
+    | IOS3, _         -> ARMv6,   VFPv3_D16, false
     end in
   (ref def_arch, ref def_fpu, ref def_thumb)
 
@@ -61,9 +64,9 @@ let pic_code = ref false
 
 let farch spec =
   arch := (match spec with
-             "armv4" when abi <> EABI_VFP   -> ARMv4
-           | "armv5" when abi <> EABI_VFP   -> ARMv5
-           | "armv5te" when abi <> EABI_VFP -> ARMv5TE
+             "armv4" when abi = EABI        -> ARMv4
+           | "armv5" when abi = EABI        -> ARMv5
+           | "armv5te" when abi = EABI      -> ARMv5TE
            | "armv6" when abi <> EABI_VFP   -> ARMv6
            | "armv6t2" when abi <> EABI_VFP -> ARMv6T2
            | "armv7"                        -> ARMv7
@@ -71,9 +74,9 @@ let farch spec =
 
 let ffpu spec =
   fpu := (match spec with
-            "soft" when abi <> EABI_VFP     -> Soft
-          | "vfpv3-d16" when abi = EABI_VFP -> VFPv3_D16
-          | "vfpv3" when abi = EABI_VFP     -> VFPv3
+            "soft" when abi <> EABI_VFP  -> Soft
+          | "vfpv3-d16" when abi <> EABI -> VFPv3_D16
+          | "vfpv3" when abi <> EABI     -> VFPv3
           | spec -> raise (Arg.Bad spec))
 
 let command_line_options =
@@ -206,6 +209,11 @@ let print_specific_operation printreg op ppf arg =
   | Isqrtf ->
       fprintf ppf "sqrtf %a"
         printreg arg.(0)
+
+(* Stack alignment constraints *)
+
+let stack_alignment =
+  if abi = IOS3 then 4 else 8
 
 (* Recognize immediate operands *)
 

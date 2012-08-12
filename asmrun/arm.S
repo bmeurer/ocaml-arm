@@ -40,6 +40,19 @@
         .endm
         .macro  vpush regs
         .endm
+#elif defined(SYS_macosx)
+        .machine armv6
+        .arm
+
+    /* Compatibility macros */
+        .macro  cbz reg, lbl
+        cmp     \reg, #0
+        beq     \lbl
+        .endm
+        .macro  .size
+        .endm
+        .macro  .type
+        .endm
 #endif
 
 #if defined(SYS_linux_eabi) || defined(SYS_linux_eabihf)
@@ -56,7 +69,7 @@ alloc_limit     .req    r11
 
 /* Support for profiling with gprof */
 
-#if defined(PROFILING) && (defined(SYS_linux_eabihf) || defined(SYS_linux_eabi))
+#if defined(PROFILING) && (defined(SYS_linux_eabi) || defined(SYS_linux_eabihf))
 #define PROFILE \
         push    {lr}; \
         bl      G(__gnu_mcount_nc)

@@ -74,7 +74,7 @@ let frame_size () =
     8 * num_stack_slots.(1) +
     8 * num_stack_slots.(2) +
     (if !contains_calls then 4 else 0)
-  in Misc.align sz 8
+  in Misc.align sz stack_alignment
 
 let slot_offset loc cl =
   match loc with
@@ -88,6 +88,8 @@ let slot_offset loc cl =
   | Outgoing n ->
       assert (n >= 0);
       n
+
+let trap_frame_size = Misc.align 8 stack_alignment
 
 (* Output a stack reference *)
 
@@ -791,21 +793,27 @@ let emit_instr i =
     | Lsetuptrap lbl ->
         `	bl	{emit_label lbl}\n`; 1
     | Lpushtrap ->
-        stack_offset := !stack_offset + 8;
+        let ninstr = emit_stack_adjustment (8 - trap_frame_size) in
+        stack_offset := !stack_offset + trap_frame_size;
         `	push	\{trap_ptr, lr}\n`;
-        cfi_adjust_cfa_offset 8;
-        `	mov	trap_ptr, sp\n`; 2
+        cfi_adjust_cfa_offset trap_frame_size;
+        `	mov	trap_ptr, sp\n`;
+        ninstr + 2
     | Lpoptrap ->
         `	pop	\{trap_ptr, lr}\n`;
-        cfi_adjust_cfa_offset (-8);
-        stack_offset := !stack_offset - 8; 1
+        let ninstr = emit_stack_adjustment (trap_frame_size - 8) in
+        cfi_adjust_cfa_offset (-trap_frame_size);
+        stack_offset := !stack_offset - trap_frame_size;
+        1 + ninstr
     | Lraise ->
         if !Clflags.debug then begin
           `	{emit_call "caml_raise_exn"}\n`;
           `{record_frame Reg.Set.empty i.dbg}\n`; 1
         end else begin
+          let ninstr = emit_stack_adjustment (trap_frame_size - 8) in
           `	mov	sp, trap_ptr\n`;
-          `	pop	\{trap_ptr, pc}\n`; 2
+          `	pop	\{trap_ptr, pc}\n`;
+          ninstr + 2
         end
 
 (* Emission of an instruction sequence *)
@@ -855,13 +863,19 @@ let fundecl fundecl =
   bound_error_sites := [];
   `	.text\n`;
   `	.align	2\n`;
-  `	.globl	{emit_symbol fundecl.fun_name}\n`;
   if !arch > ARMv6 && !thumb then begin
     `	.thumb\n`;
     `	.thumb_func	{emit_symbol fundecl.fun_name}\n`
   end else begin
     `	.arm\n`
   end;
+  if macosx
+  && not !Clflags.output_c_object
+  && is_generic_function fundecl.fun_name
+  then (* PR#4690 *)
+    `	.private_extern	{emit_symbol fundecl.fun_name}\n`
+  else
+    `	.globl	{emit_symbol fundecl.fun_name}\n`;
   `{emit_symbol fundecl.fun_name}:\n`;
   emit_debug_info fundecl.fun_dbg;
   cfi_startproc();
@@ -912,12 +926,18 @@ let begin_assembly() =
   reset_debug_info();
   `	.syntax	unified\n`;
   begin match !arch with
-  | ARMv4   -> `	.arch	armv4t\n`
+    ARMv4   -> `	.arch	armv4t\n`
   | ARMv5   -> `	.arch	armv5t\n`
   | ARMv5TE -> `	.arch	armv5te\n`
-  | ARMv6   -> `	.arch	armv6\n`
-  | ARMv6T2 -> `	.arch	armv6t2\n`
-  | ARMv7   -> `	.arch	armv7-a\n`
+  | ARMv6   -> if macosx
+               then `	.machine	armv6\n`
+               else `	.arch	armv6\n`
+  | ARMv6T2 -> if macosx
+               then `	.machine	armv6\n`
+               else `	.arch	armv6t2\n`
+  | ARMv7   -> if macosx
+               then `	.machine	armv7\n`
+               else `	.arch	armv7-a\n`
   end;
   begin match !fpu with
     Soft      -> `	.fpu	softvfp\n`
@@ -934,11 +954,13 @@ let begin_assembly() =
   let lbl_begin = Compilenv.make_symbol (Some "code_begin") in
   `	.text\n`;
   `	.globl	{emit_symbol lbl_begin}\n`;
-  `{emit_symbol lbl_begin}:\n`
+  `{emit_symbol lbl_begin}:\n`;
+  if macosx then `	nop\n` (* PR#4690 *)
 
 let end_assembly () =
   let lbl_end = Compilenv.make_symbol (Some "code_end") in
   `	.text\n`;
+  if macosx then `	nop\n`; (* suppress "ld warning: atom sorting error" *)
   `	.globl	{emit_symbol lbl_end}\n`;
   `{emit_symbol lbl_end}:\n`;
   let lbl_end = Compilenv.make_symbol (Some "data_end") in
@@ -961,10 +983,13 @@ let end_assembly () =
                            `	.word	{emit_label lbl} - . + {emit_int32 ofs}\n`);
       efa_def_label = (fun lbl -> `{emit_label lbl}:\n`);
       efa_string = (fun s -> emit_string_directive "	.asciz	" s) };
-  `	.type	{emit_symbol lbl}, %object\n`;
-  `	.size	{emit_symbol lbl}, .-{emit_symbol lbl}\n`;
   begin match Config.system with
-    "linux_eabihf" | "linux_eabi" ->
+    "linux_eabi" | "linux_eabihf" ->
+      `	.type	{emit_symbol lbl}, %object\n`;
+      `	.size	{emit_symbol lbl}, .-{emit_symbol lbl}\n`
+  | _ -> () end;
+  begin match Config.system with
+    "linux_eabi" | "linux_eabihf" ->
       (* Mark stack as non-executable *)
       `	.section	.note.GNU-stack,\"\",%progbits\n`
   | _ -> ()
